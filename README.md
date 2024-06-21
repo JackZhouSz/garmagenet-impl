@@ -1,92 +1,121 @@
-# Style3d Gen
+# BrepGen: A B-rep Generative Diffusion Model with Structured Latent Geometry (SIGGRAPH 2024)
+
+[![arXiv](https://img.shields.io/badge/📃-arXiv%20-red.svg)](https://arxiv.org/abs/2401.15563)
+[![webpage](https://img.shields.io/badge/🌐-Website%20-blue.svg)](https://brepgen.github.io) 
+[![Youtube](https://img.shields.io/badge/📽️-Video%20-orchid.svg)](https://www.youtube.com/xxx)
+
+*[Xiang Xu](https://samxuxiang.github.io/), [Joseph Lambourne](https://www.research.autodesk.com/people/joseph-george-lambourne/),
+[Pradeep Jayaraman](https://www.research.autodesk.com/people/pradeep-kumar-jayaraman/), [Zhengqing Wang](https://www.linkedin.com/in/zhengqing-wang-485854241/?originalSubdomain=ca), [Karl Willis](https://www.karlddwillis.com/), and [Yasutaka Furukawa](https://yasu-furukawa.github.io/)*
+
+![alt BrepGen](resources/teaser.jpg)
+
+> We present a diffusion-based generative approach that directly outputs a CAD B-rep. BrepGen uses a novel structured latent geometry to encode the CAD geometry and topology. A top-down generation approach is used to denoise the faces, edges, and vertices. 
 
 
+## Requirements
 
-## Getting started
+### Environment (Tested)
+- Linux
+- Python 3.9
+- CUDA 11.8 
+- PyTorch 2.2 
+- Diffusers 0.27
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+### Dependencies
 
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+Install PyTorch and other dependencies:
 ```
-cd existing_repo
-git remote add origin http://gitlab.linctex.com/ai/style3d_gen.git
-git branch -M main
-git push -uf origin main
+conda create --name brepgen_env python=3.9 -y
+conda activate brepgen_env
+
+pip install -r requirements.txt
+pip install chamferdist
 ```
 
-## Integrate with your tools
+If `chamferdist` fails to install here are a few options to try:
 
-- [ ] [Set up project integrations](http://gitlab.linctex.com/ai/style3d_gen/-/settings/integrations)
+- If there is a CUDA version mismatch error, then try setting the `CUDA_HOME` environment variable to point to CUDA installation folder. The CUDA version of this folder must match with PyTorch's version i.e. 11.8.
 
-## Collaborate with your team
+- Try [building from source](https://github.com/krrish94/chamferdist?tab=readme-ov-file#building-from-source).
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+Install OCCWL following the instruction [here](https://github.com/AutodeskAILab/occwl).
+If conda is stuck in "Solving environment..." there are two options to try:
 
-## Test and Deploy
+- Try using `mamba` as suggested in occwl's README.
 
-Use the built-in continuous integration in GitLab.
+- Install pythonOCC: https://github.com/tpaviot/pythonocc-core?tab=readme-ov-file#install-with-conda and occwl manually: `pip install git+https://github.com/AutodeskAILab/occwl`.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+## Data
+Download [ABC](https://archive.nyu.edu/handle/2451/43778) STEP files (100 folders), or the [Furniture Data](https://drive.google.com/file/d/16nXl7OXOZtPxRhkGobOezDTXiBisEVs2/view?usp=sharing). 
 
-***
+The faces, edges, and vertices need to be extracted from the STEP files.  
 
-# Editing this README
+Process the B-reps (under ```data_process``` folder):
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!).  Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+    sh process.sh
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
 
-## Name
-Choose a self-explaining name for your project.
+Remove repeated CAD models (under ```data_process``` folder, default is ```6 bit``` ):
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+    sh deduplicate.sh
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+You can download the deduplicated files for [DeepCAD](https://drive.google.com/drive/folders/1N_60VCZKYgPviQgP8lwCOVXrzu9Midfe?usp=drive_link), [ABC](https://drive.google.com/drive/folders/1bA90Rz5EcwaUhUrgFbSIpgdJ0aeDjy3v?usp=drive_link), and [Furniture](https://drive.google.com/drive/folders/13TxFFSXqT4IgyIwO4z6gbm4jg3JrnbZL?usp=drive_link).
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+## Training 
+Train the surface and edge VAE (wandb for logging):
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+    sh train_vae.sh
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+Train the latent diffusion model (change path to previously trained VAEs):
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+    sh train_ldm.sh
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+```--cf``` classifier-free training for the Furniture dataset. 
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+```--data_aug``` randomly rotate the CAD model during training (optional).
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
 
-## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+
+## Generation and Evaluation
+Randomly generate B-reps from Gaussian noise, both STEP and STL files will be saved:
+
+    python sample.py --mode abc
+
+This will load  the settings in ```eval_config.yaml```. Make sure to update model paths to the correct folder. 
+
+Run this script for evaluation (change the path to generated data folder, with at least 3,000 samples):
+
+    sh eval.sh
+    
+This computes the JSD, MMD, and COV scores. Please also download sampled point clouds for [test set](https://drive.google.com/drive/folders/1kqxSDkS2gUN9_qpuWotFDhl4t7czbfOc?usp=sharing). 
+
+
+## Pretrained Checkpoint
+We also provide the individual checkpoints trained on different datasets. 
+| **Source Dataset** |  |   |                                                 
+|--------------------|-----------| -----------|
+| DeepCAD | [vae model](https://drive.google.com/drive/folders/1UZYqJ2EmTjzeTcNr_NL3bPpU4WrufvQa?usp=drive_link) |   [latent diffusion model](https://drive.google.com/drive/folders/1jonuCzoTBFOKKlnaoGlbmhT6YlnH0lma?usp=drive_link) |
+| ABC | [vae model](https://drive.google.com/drive/folders/18Ib9L0kpFf4ylZIRTCYFhXZB_GVIUm53?usp=drive_link) |   [latent diffusion model](https://drive.google.com/drive/folders/1hv7ZUcU-L3J0LiONK60-TEh7sAN0zfve?usp=drive_link) |
+| Furniture | [vae model](https://drive.google.com/drive/folders/1HT5h8b6mxcgBfz0Ciwue8nANcKgmRTd-?usp=drive_link) |   [latent diffusion model](https://drive.google.com/drive/folders/1NxuZ9en6yWSkmb2pBQ97aFlWvtBSNnjU?usp=drive_link) |
+
+
+## Acknowledgement
+This research is partially supported by NSERC Discovery Grants with Accelerator Supplements and DND/NSERC Discovery Grant
+Supplement, NSERC Alliance Grants, and John R. Evans Leaders Fund (JELF). We also thank Onshape for their support and access of
+the publicly available CAD models.
+
+
+## Citation
+If you find our work useful in your research, please cite the following paper
+```
+@article{xu2024brepgen,
+  title={BrepGen: A B-rep Generative Diffusion Model with Structured Latent Geometry},
+  author={Xu, Xiang and Lambourne, Joseph G and Jayaraman, Pradeep Kumar and Wang, Zhengqing and Willis, Karl DD and Furukawa, Yasutaka},
+  journal={arXiv preprint arXiv:2401.15563},
+  year={2024}
+}
+```
