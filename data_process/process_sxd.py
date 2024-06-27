@@ -49,10 +49,15 @@ _PANEL_COLORS = np.array(
                           for idx in range(len(_PANEL_CLS))]
 )
 
-_AVATAR_BBOX = [
+_AVATAR_BBOX = np.array([
     [-449.00006104,  191.10876465, -178.34872437],      # min
     [447.45980835, 1831.29016113,  174.13575745]       # max
-]
+])
+
+_GLOBAL_SCALE = 500.0
+_GLOBAL_OFFSET = np.array([0.0, 1000.0, 0.0])
+_GLOBAL_SCALE_UV = 500.0
+_GLOBAL_OFFSET_UV = np.array([0.0, 1000.0])
 
 
 def _interpolate_feature_dr(rast, pos, tris, feat):
@@ -164,20 +169,12 @@ def _project_curve_to_line_segments(curve_pts, line_segments, line_features):
 def prepare_edge_data(
     mesh_obj,
     pattern_spec,
-    reso=64,
-    global_bbox=None
+    reso=64
 ):
 
     verts = mesh_obj.points
     uv = mesh_obj.point_data['obj:vt']
     normals = mesh_obj.point_data['obj:vn']
-
-    # global normalization to (-1, 1) for the whole
-    if global_bbox is not None:
-        global_bbox = np.array(global_bbox, dtype=np.float32)
-        global_offset = (global_bbox[0, :] + global_bbox[1, :]) / 2.0
-        global_scale = np.max(global_bbox[1, :] - global_bbox[0, :])
-        verts = (verts - global_offset) / (global_scale * 0.5)
 
     panel_data = dict([(x['id'], x) for x in pattern_spec['panels']])
     edge_ids, edge_wcs, edge_uvs, edge_normals = [], [], [], []
@@ -279,8 +276,7 @@ def prepare_surf_data(
     glctx,
     mesh_obj,
     pattern_spec,
-    reso=64,
-    global_bbox=None
+    reso=64
 ):
 
     verts = torch.from_numpy(mesh_obj.points).to(torch.float32).to('cuda')
@@ -289,14 +285,6 @@ def prepare_surf_data(
     normals = torch.from_numpy(mesh_obj.point_data['obj:vn']).to(torch.float32).to('cuda')
     # print('*** before normalization: ',
     #       verts.min(dim=0)[0], verts.max(dim=0)[0])
-
-    # global normalization to (-1, 1) for the whole
-    if global_bbox is not None:
-        global_bbox = torch.tensor(global_bbox).to(torch.float32).to('cuda')
-        global_offset = (global_bbox[0, :] + global_bbox[1, :]) / 2.0
-        global_scale = torch.max(global_bbox[1, :] - global_bbox[0, :])
-        verts = (verts - global_offset) / (global_scale * 0.5)
-        # print('*** after normalization: ', verts.min(dim=0)[0], verts.max(dim=0)[0])
 
     panel_ids = []
     uv_local = uv.clone()               # projected pixel coordinate for each vertex
@@ -422,7 +410,8 @@ def normalize(surf_pnts, edge_pnts, corner_pnts):
     total_points = np.array(surf_pnts).reshape(-1, p_dim)
     min_vals = np.min(total_points, axis=0)
     max_vals = np.max(total_points, axis=0)
-    global_offset = min_vals + (max_vals - min_vals)/2
+        
+    global_offset = min_vals + (max_vals - min_vals) / 2
     global_scale = max(max_vals - min_vals)
     assert global_scale != 0, 'scale is zero'
 
@@ -490,8 +479,7 @@ def extract_primitive(pattern):
 def process_data(
         data_item: str,
         glctx=None,
-        num_samples=64,
-        use_global_bbox=False):
+        num_samples=64):
 
     # print('*** Processing data: ', data_item)
 
@@ -506,23 +494,29 @@ def process_data(
     if glctx is None: glctx = dr.RasterizeCudaContext()
 
     panel_ids, surf_pnts, surf_uvs, surf_norms = prepare_surf_data(
-        glctx, mesh_obj=mesh_obj, pattern_spec=pattern_spec, reso=num_samples,
-        global_bbox=_AVATAR_BBOX if use_global_bbox else None
+        glctx, mesh_obj=mesh_obj, pattern_spec=pattern_spec, reso=num_samples
     )
 
     # edge && corner
     edge_ids, edge_pnts, edge_uvs, edge_normals, corner_pnts, corner_uvs, corner_normals, faceEdge_adj = prepare_edge_data(
-        mesh_obj, pattern_spec, reso=num_samples,
-        global_bbox=_AVATAR_BBOX if use_global_bbox else None
+        mesh_obj, pattern_spec, reso=num_samples
     )
+    
 
     # faceEdge_adj = face_edge_adj(pattern_spec, panel_ids_, edge_ids)
     faceEdge_adj = face_edge_to_id(faceEdge_adj, panel_ids, edge_ids)
 
+    # manual normalization to approximate [-1, 1]
+    surf_pnts = (surf_pnts - _GLOBAL_OFFSET[..., :]) / _GLOBAL_SCALE
+    edge_pnts = (edge_pnts - _GLOBAL_OFFSET[..., :]) / _GLOBAL_SCALE
+    corner_pnts = (corner_pnts - _GLOBAL_OFFSET[..., :]) / _GLOBAL_SCALE
     surfs_wcs, edges_wcs, surfs_ncs, edges_ncs, corner_wcs, global_offset, global_scale = normalize(
         surf_pnts, edge_pnts, corner_pnts
     )
     
+    surf_uvs = (surf_uvs - _GLOBAL_OFFSET_UV[..., :]) / _GLOBAL_SCALE_UV
+    edge_uvs = (edge_uvs - _GLOBAL_OFFSET_UV[..., :]) / _GLOBAL_SCALE_UV
+    corner_uvs = (corner_uvs - _GLOBAL_OFFSET_UV[..., :]) / _GLOBAL_SCALE_UV
     surfs_uv_wcs, edges_uv_wcs, surfs_uv_ncs, edges_uv_ncs, corner_uv_wcs, uv_offset, uv_scale = normalize(
         surf_uvs, edge_uvs, corner_uvs
     )
@@ -549,6 +543,9 @@ def process_data(
         'surf_normals': surf_norms.astype(np.float32),
         'edge_normals': edge_normals.astype(np.float32),
         'corner_normals': corner_normals.astype(np.float32),
+        # bbox
+        'surf_bbox_wcs': np.array(_AVATAR_BBOX, dtype=np.float32),
+        'edge_bbox_wcs': np.array(_AVATAR_BBOX, dtype=np.float32),
         # adj
         'faceEdge_adj': faceEdge_adj
     }
@@ -566,7 +563,7 @@ def process_item(data_idx, data_item, args, glctx):
     output_fp = os.path.join(args.output, '%04d.pkl' % (data_idx))    
     result = process_data(
         data_item, glctx=glctx, 
-        num_samples=64, use_global_bbox=True)
+        num_samples=64)
     
     with open(output_fp, 'wb') as f: pickle.dump(result, f)
     return True, data_item
@@ -605,7 +602,7 @@ if __name__ == '__main__':
     os.makedirs(args.output, exist_ok=True)
 
     with open(wrong_files, 'a+') as wrong_fp:
-        with ThreadPoolExecutor(max_workers=4) as executor:  # 可以调整max_workers以改变并行度
+        with ThreadPoolExecutor(max_workers=8) as executor:  # 可以调整max_workers以改变并行度
             futures = {executor.submit(
                 process_item, data_idx, data_item, args, glctx): data_item for data_idx, data_item in enumerate(data_items)}
 
