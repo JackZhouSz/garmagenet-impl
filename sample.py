@@ -69,7 +69,8 @@ def sample(eval_args):
     edgeZ_model.load_state_dict(torch.load(eval_args['edgez_weight']))
     edgeZ_model = edgeZ_model.to(device).eval()
 
-    surf_vae = AutoencoderKLFastDecode(in_channels=3,
+    surf_vae = AutoencoderKLFastDecode(
+        in_channels=3,
         out_channels=3,
         down_block_types=['DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'],
         up_block_types= ['UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'],
@@ -292,7 +293,6 @@ def sample(eval_args):
             # Decode the edges
             edge_ncs = edge_vae(edge_z.unflatten(-1,torch.Size([4,3])).reshape(-1,4,3).permute(0,2,1))
             edge_ncs = edge_ncs.permute(0,2,1).reshape(batch_size, num_surfaces, num_edges, 32, 3).detach().cpu().numpy()
-
 
             edge_mask = edgeM.detach().cpu().numpy()     
             edge_pos = edgePos.detach().cpu().numpy() / 3.0
