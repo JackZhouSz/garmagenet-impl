@@ -94,7 +94,8 @@ def _get_scale_offset(point_sets, points_mask):
 def _interpolate_feature_dr(rast, pos, tris, feat, antialias=False):
 
     out, _ = dr.interpolate(feat[None], rast, tris)
-    if antialias: out = dr.antialias(out, rast, pos[None], tris)
+    print('[INTERPOLATE] out: ', out.shape, rast.shape, pos.shape, tris.shape)
+    if antialias: out = dr.antialias(out, rast, pos, tris)
     out = out.detach().cpu().numpy()
 
     ############## visualize sample points ##############
@@ -226,9 +227,9 @@ def _get_vert_cls(mesh_obj,
             panel_corner_uvs[:, None, :] - boundary_uv[None], axis=-1)
         panel_corner_vert_idx = np.argmin(panel_corner_vert_dists, axis=-1)
         vert_cls[panel_corner_vert_idx] = cls_label['vert']
-                    
-    print('*** vert cls: ', np.unique(vert_cls))
-   
+                       
+    mesh_obj.point_data['obj:cls'] = vert_cls
+                       
     return vert_cls 
     
 
@@ -367,6 +368,9 @@ def prepare_surf_data(
     tris = []                           # all triangles
     tri_ranges = []                     # triangle range for each panel,
     start_idx = 0
+    
+    boundary_verts = []
+    boundary_verts_uv = []
 
     for idx, panel_id in enumerate(mesh_obj.field_data['obj:group_tags']):
         panel_ids.append(panel_id)
@@ -402,13 +406,16 @@ def prepare_surf_data(
         torch.ones_like(uv_local[:, :1])], dim=1)
 
     rast, _ = dr.rasterize(
-        glctx, uv_local, tris, resolution=[reso, reso], ranges=tri_ranges)
+        glctx, uv_local, tris, resolution=[reso, reso], 
+        ranges=tri_ranges, grad_db=False)
 
     surf_pnts = _interpolate_feature_dr(rast, uv_local, tris, verts)
     surf_uvs = _interpolate_feature_dr(rast, uv_local, tris, uv)[..., :2]
     surf_norms = _interpolate_feature_dr(rast, uv_local, tris, normals)
     surf_mask = (rast[..., 3:]>0).squeeze(0).cpu().numpy()
     
+    print('[SURF] surf_pnts: ', surf_pnts.shape, surf_pnts.min(), surf_pnts.max())
+        
     return panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask
 
 
@@ -663,7 +670,7 @@ if __name__ == '__main__':
 
     log_file = os.path.join(args.output, 'app.log')
     if os.path.exists(log_file):
-        with open(log_file, "r", encoding="utf-8") as f:
+        with open(log_file, "r") as f:
             lines = f.readlines()
             processed = [x.split("\t")[0] for x in lines if x.split("\t")[1].strip() == "1"]
             data_items = [x for x in data_items if x not in processed]

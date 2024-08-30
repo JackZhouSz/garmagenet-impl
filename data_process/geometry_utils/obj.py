@@ -74,7 +74,7 @@ class Mesh:
         self.cell_sets = {} if cell_sets is None else cell_sets
         self.info = info
 
-        # print('*** field data: ', self.field_data)
+        print('*** field data: ', self.field_data)
 
         # assert point data consistency and convert to numpy arrays
         for key, item in self.point_data.items():
@@ -108,6 +108,7 @@ def __read_buffer(f):
     points = []
     vertex_normals = []
     texture_coords = []
+    vertex_pairs = []
 
     face_groups = []  # face index
     face_group_tags = []  # face group tag (str)
@@ -117,22 +118,18 @@ def __read_buffer(f):
     while True:
         line = f.readline()
 
-        if not line:
-            break
+        if not line: break
 
-        try:
-            line = line.decode()
-        except:
-            continue
+        try: line = line.decode()
+        except: continue
 
         strip = line.strip()
 
-        if len(strip) == 0 or strip[0] == "#":
-            continue
+        if len(strip) == 0 or strip[0] == "#": continue
 
         split = strip.split()
 
-        if split[0] == "v":
+        if split[0] =="v":
             points.append([float(item) for item in split[1:]])
         elif split[0] == "vn":
             vertex_normals.append([float(item) for item in split[1:]])
@@ -140,7 +137,10 @@ def __read_buffer(f):
             texture_coords.append([float(item) for item in split[1:]])
         elif split[0] == "s":
             # "s 1" or "s off" controls smooth shading
-            pass
+            pass  
+        elif split[0] == "l":
+            # print('*** line: ', split, ([int(item) for item in split[1:]]))
+            vertex_pairs.append([int(item) for item in split[1:]])
         elif split[0] == "f":
             dat = [int(item.split("/")[0]) for item in split[1:]]
             if len(face_groups) == 0 or (
@@ -157,6 +157,8 @@ def __read_buffer(f):
             face_group_ids.append([])
             face_group_id += 1
             face_group_tags.append(split[1].strip() if len(split) > 1 else "")
+        elif split[0] == "l":
+            pass
         else:
             # who knows
             pass
@@ -178,6 +180,8 @@ def __read_buffer(f):
     points = np.array(points)
     texture_coords = np.array(texture_coords)
     vertex_normals = np.array(vertex_normals)
+    vertex_pairs = np.array(vertex_pairs)
+    
     point_data = {}
     if len(texture_coords) > 0:
         point_data["obj:vt"] = texture_coords
@@ -188,6 +192,7 @@ def __read_buffer(f):
     face_groups = [np.array(f) for f in face_groups]
     cell_data = {"obj:group_ids": []}
     cells = []
+    
     for f, gid in zip(face_groups, face_group_ids):
         if f.shape[1] == 3:
             cells.append(CellBlock("triangle", f - 1))
@@ -198,7 +203,7 @@ def __read_buffer(f):
         cell_data["obj:group_ids"].append(gid)
 
     # logging field data
-    field_data = {"obj:group_tags": face_group_tags}
+    field_data = {"obj:group_tags": face_group_tags, "obj:vertex_pairs": vertex_pairs}
 
     return Mesh(
         points, cells, point_data=point_data, cell_data=cell_data, field_data=field_data

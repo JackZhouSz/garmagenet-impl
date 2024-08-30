@@ -1071,6 +1071,7 @@ class SurfPosNet(nn.Module):
 
     def __init__(self, use_cf):
         super(SurfPosNet, self).__init__()
+        
         self.embed_dim = 768
         self.use_cf = use_cf
 
