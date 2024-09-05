@@ -74,8 +74,6 @@ class Mesh:
         self.cell_sets = {} if cell_sets is None else cell_sets
         self.info = info
 
-        print('*** field data: ', self.field_data)
-
         # assert point data consistency and convert to numpy arrays
         for key, item in self.point_data.items():
             self.point_data[key] = np.asarray(item)
@@ -203,7 +201,8 @@ def __read_buffer(f):
         cell_data["obj:group_ids"].append(gid)
 
     # logging field data
-    field_data = {"obj:group_tags": face_group_tags, "obj:vertex_pairs": vertex_pairs}
+    field_data = {"obj:group_tags": face_group_tags}
+    if vertex_pairs.shape[0] > 0: field_data["obj:vertex_pairs"] = vertex_pairs
 
     return Mesh(
         points, cells, point_data=point_data, cell_data=cell_data, field_data=field_data

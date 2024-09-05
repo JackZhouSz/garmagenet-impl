@@ -55,9 +55,9 @@ _AVATAR_BBOX = np.array([
     [447.45980835, 1831.29016113,  174.13575745]       # max
 ])
 
-_GLOBAL_SCALE = 1000.0
+_GLOBAL_SCALE = 2000.0
 _GLOBAL_OFFSET = np.array([0.0, 1000.0, 0.0])
-_GLOBAL_SCALE_UV = 2500.0
+_GLOBAL_SCALE_UV = 3000.0
 _GLOBAL_OFFSET_UV = np.array([0.0, 1000.0])
 
 
@@ -394,6 +394,14 @@ def prepare_surf_data(
         uv_local[vert_ids, :] = (uv_local[vert_ids, :] - panel_bbox2d[0]) / (
             panel_bbox2d[1] - panel_bbox2d[0] + 1e-6)      # normalize to [0, 1]
         
+        # check boundary vertices
+        boundary = igl.boundary_facets(panel_faces)
+        boundary_verts_idx = np.unique(boundary)
+        print('[SURF] boundary_verts_idx: ', boundary_verts_idx.shape)
+        
+        boundary_verts_uv.append(uv_local[boundary_verts_idx, :].cpu().numpy())
+        boundary_verts.append(verts[boundary_verts_idx, :].cpu().numpy())
+        
     tris = torch.cat(tris, dim=0).to(torch.int32)
     # panel triangle range#
     tri_ranges = torch.tensor(tri_ranges, dtype=torch.int32)
@@ -415,8 +423,21 @@ def prepare_surf_data(
     surf_mask = (rast[..., 3:]>0).squeeze(0).cpu().numpy()
     
     print('[SURF] surf_pnts: ', surf_pnts.shape, surf_pnts.min(), surf_pnts.max())
-        
-    return panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask
+    
+    print('[SURF] processing boundary facets: ', len(boundary_verts), len(boundary_verts_uv))
+    for idx in range(len(boundary_verts)):
+        print(
+            '[SURF-%d] boundary_verts: '%(idx), 
+            surf_pnts[idx].shape,
+            boundary_verts[idx].shape, 
+            boundary_verts_uv[idx].shape,
+            np.min(boundary_verts[idx], axis=0), 
+            np.max(boundary_verts[idx], axis=0),
+            np.min(boundary_verts_uv[idx], axis=0),
+            np.max(boundary_verts_uv[idx], axis=0)
+        )
+                
+    return panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask, boundary_verts, boundary_verts_uv
 
 
 def face_edge_adj(json_content: dict, panel_ids: list, edge_ids: list):
