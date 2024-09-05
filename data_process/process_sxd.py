@@ -369,9 +369,6 @@ def prepare_surf_data(
     tri_ranges = []                     # triangle range for each panel,
     start_idx = 0
     
-    boundary_verts = []
-    boundary_verts_uv = []
-
     for idx, panel_id in enumerate(mesh_obj.field_data['obj:group_tags']):
         panel_ids.append(panel_id)
 
@@ -421,23 +418,8 @@ def prepare_surf_data(
     surf_uvs = _interpolate_feature_dr(rast, uv_local, tris, uv)[..., :2]
     surf_norms = _interpolate_feature_dr(rast, uv_local, tris, normals)
     surf_mask = (rast[..., 3:]>0).squeeze(0).cpu().numpy()
-    
-    print('[SURF] surf_pnts: ', surf_pnts.shape, surf_pnts.min(), surf_pnts.max())
-    
-    print('[SURF] processing boundary facets: ', len(boundary_verts), len(boundary_verts_uv))
-    for idx in range(len(boundary_verts)):
-        print(
-            '[SURF-%d] boundary_verts: '%(idx), 
-            surf_pnts[idx].shape,
-            boundary_verts[idx].shape, 
-            boundary_verts_uv[idx].shape,
-            np.min(boundary_verts[idx], axis=0), 
-            np.max(boundary_verts[idx], axis=0),
-            np.min(boundary_verts_uv[idx], axis=0),
-            np.max(boundary_verts_uv[idx], axis=0)
-        )
-                
-    return panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask, boundary_verts, boundary_verts_uv
+        
+    return panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask
 
 
 def face_edge_adj(json_content: dict, panel_ids: list, edge_ids: list):
