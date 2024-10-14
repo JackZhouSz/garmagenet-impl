@@ -85,7 +85,7 @@ Randomly generate B-reps from Gaussian noise, both STEP and STL files will be sa
 
     python sample.py --mode abc
 
-This will load  the settings in ```eval_config.yaml```. Make sure to update model paths to the correct folder. 
+This will load  the settings in ```configs/eval_config.yaml```. Make sure to update model paths to the correct folder. 
 
 Run this script for evaluation (change the path to generated data folder, with at least 3,000 samples):
 

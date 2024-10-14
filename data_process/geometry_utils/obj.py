@@ -137,7 +137,6 @@ def __read_buffer(f):
             # "s 1" or "s off" controls smooth shading
             pass  
         elif split[0] == "l":
-            # print('*** line: ', split, ([int(item) for item in split[1:]]))
             vertex_pairs.append([int(item) for item in split[1:]])
         elif split[0] == "f":
             dat = [int(item.split("/")[0]) for item in split[1:]]

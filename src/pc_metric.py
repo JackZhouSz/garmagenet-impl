@@ -10,7 +10,7 @@ from sklearn.neighbors import NearestNeighbors
 from plyfile import PlyData
 from pathlib import Path
 import multiprocessing
-from chamfer_distance import ChamferDistance
+from chamferdist import ChamferDistance
 
 N_POINTS = 2000
 

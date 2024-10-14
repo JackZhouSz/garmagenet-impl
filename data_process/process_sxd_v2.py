@@ -63,7 +63,8 @@ _AVATAR_BBOX = np.array([
 
 _GLOBAL_SCALE = 2000.0
 _GLOBAL_OFFSET = np.array([0.0, 1000.0, 0.0])
-_GLOBAL_SCALE_UV = 3000.0
+
+_GLOBAL_SCALE_UV = 1500.0
 _GLOBAL_OFFSET_UV = np.array([0.0, 1000.0])
 
 
@@ -175,9 +176,6 @@ def _project_curve_to_line_segments(curve_pts, line_segments, line_features):
 
     belonging_segments = np.argmin(query_dist, axis=-1)
 
-    # start_pt = line_segments[belonging_segments, 0, :]
-    # end_pt = line_segments[belonging_segments, 1, :]
-
     start_feat = line_features[belonging_segments, 0, :]
     end_feat = line_features[belonging_segments, 1, :]
 
@@ -237,21 +235,6 @@ def _get_vert_cls(mesh_obj,
                        
     return vert_cls 
     
-
-def _rasterize_boundary_facets(boundary_facets, feat, uv,  reso=64):
-    """Rasterize boundary facets (lines) to a 2D image with simple line rasterization
-
-    Args:
-        boundary_facets (np.ndarray): boundary facets of shape (N, 2), where N is the number of boundary edges
-        feat (np.ndarray): per-vertex features of shape (M, C), where M is the number of vertices
-        uv (np.ndarray): vertex uv of shape (M, 2)
-        reso (int): rasterization resolution
-    
-    Returns:
-        'feat': np.ndarray, feature image of shape (reso, reso, C)
-    """    
-    raise NotImplementedError
-
     
 def _downsample_sparse_pooling(x, factor=16, anti_aliasing=False):
     """ downsample input array with sparse pooling
@@ -372,11 +355,6 @@ def prepare_edge_data(
         panel_corner_normals = boundary_normals[panel_corner_vert_idx, :]
         panel_corner_uvs = (panel_corner_uvs + panel_center[None])[..., :2]
         
-        # # change to [start, end] tuples
-        # panel_corner_wcs = np.stack(
-        #     [panel_corner_wcs, panel_corner_wcs[1:, :]]
-        # )
-        
         # global verts coordinates
         corner_wcs.append(panel_corner_wcs)
         corner_uvs.append(panel_corner_uvs)
@@ -397,15 +375,12 @@ def prepare_surf_data(
     mesh_obj,
     pattern_spec,
     reso=64          # original rasterization resolution
-    # down_factor=-1    # downsample factor
 ):
 
     verts = torch.from_numpy(mesh_obj.points).to(torch.float32).to('cuda')
     uv = torch.from_numpy(mesh_obj.point_data['obj:vt']).to(
         torch.float32).to('cuda')
     normals = torch.from_numpy(mesh_obj.point_data['obj:vn']).to(torch.float32).to('cuda')
-    # print('*** before normalization: ',
-    #       verts.min(dim=0)[0], verts.max(dim=0)[0])
 
     panel_data = dict([(x['id'], x) for x in pattern_spec['panels']])
 
@@ -440,13 +415,6 @@ def prepare_surf_data(
         uv_local[vert_ids, :] = (uv_local[vert_ids, :] - panel_bbox2d[0]) / (
             panel_bbox2d[1] - panel_bbox2d[0] + 1e-6)      # normalize to [0, 1]
         
-        # # check boundary vertices
-        # boundary = igl.boundary_facets(panel_faces)
-        # boundary_verts_idx = np.unique(boundary)
-        # print('[SURF] boundary_verts_idx: ', boundary_verts_idx.shape)
-        
-        # boundary_verts_uv.append(uv_local[boundary_verts_idx, :].cpu().numpy())
-        # boundary_verts.append(verts[boundary_verts_idx, :].cpu().numpy())
         
     tris = torch.cat(tris, dim=0).to(torch.int32)
     # panel triangle range#
@@ -488,74 +456,9 @@ def prepare_surf_data(
     return panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask
 
 
-def face_edge_adj(json_content: dict, panel_ids: list, edge_ids: list):
-    """
-    TODO:Extract adjacent information between face and edge
-
-    Args:
-        json_content (dict): pattern.json content
-        panel_ids(list): list of panel uuids
-        edge_ids(list): list of edge uuids
-
-    Returns:
-        faceEdge_adj: A list of N sublist, where each sublist represents the adjacent edge IDs to a face
-    """
-    panel_ids = np.array(panel_ids)
-    edge_ids = np.array(edge_ids)
-
-    id_info = {}
-
-    panel_edge_dict = {}
-    for panel in json_content['panels']:
-        try:
-            panel_id = np.where(panel_ids == panel['id'])[0][0]
-        except Exception as e:
-            print(f"Wrong faces | panel_id: {panel['id']}, {np.where(panel_ids == panel['id'])},{e}")
-            continue
-        panel_edge_dict[panel_id] = []
-        id_info[panel['id']] = []
-        
-        for edge_seq in panel['seqEdges']:
-            for edge in edge_seq['edges']:
-                id_info[panel['id']].append(edge['id'])
-                try:
-                    edge_id = np.where(edge_ids == edge['id'])[0][0]
-                except Exception as e:
-                    print(f"Wrong edges |panel_id: {panel['id']}, edge_id: {edge['id']}, {np.where(edge_ids == edge['id'])},{e}")
-                    continue
-                panel_edge_dict[panel_id].append(int(edge_id))
-                panel_edge_dict[panel_id] = sorted(list(set(panel_edge_dict[panel_id])))
-
-    faceEdge_adj = []
-    for panel_id in range(len(panel_ids)):
-        faceEdge_adj.append(panel_edge_dict[panel_id])
-
-    # final = {'id_info':id_info, 'panel_ids':panel_ids.tolist(), 'edge_ids':edge_ids.tolist(),'faceEdge_adj':faceEdge_adj}
-
-    # with open('test.json', 'w') as f:
-    #     json.dump(final, f, indent=4)
-
-    return faceEdge_adj
-
-def face_edge_to_id(faceEdge_adj: dict, panel_ids_, edge_ids):
-    adj_uuid_id = {}
-    
-    face_uuid_id, edge_uuid_id = {}, {}
-    for idx, panel_id in enumerate(panel_ids_):
-        face_uuid_id[panel_id] = idx
-    
-    for idx, edge_id in enumerate(edge_ids):
-        edge_uuid_id[edge_id] = idx
-
-    for face_id, edge_ids in faceEdge_adj.items():
-        adj_uuid_id[face_uuid_id[face_id]] = [edge_uuid_id[edge_id] for edge_id in edge_ids]
-    
-    return adj_uuid_id
-
-
 def normalize(
-    surf_pnts, edge_pnts, corner_pnts, 
-    surf_masks=None, edge_masks=None, corner_masks=None,
+    surf_pnts,
+    surf_masks=None,
     global_offset=None, global_scale=None):
     
     """
@@ -567,11 +470,7 @@ def normalize(
         global_offset, global_scale = _get_scale_offset(surf_pnts, surf_masks)
         assert global_scale != 0, 'scale is zero'
 
-    surfs_wcs, edges_wcs, surfs_ncs, edges_ncs = [], [], [], []
-
-    # Normalize corner
-    if corner_masks is None: corner_masks = np.ones_like(corner_pnts[..., :1]).astype(bool)
-    corner_wcs = (corner_pnts - global_offset[np.newaxis, :]) / (global_scale * 0.5) * corner_masks.astype(corner_pnts.dtype)
+    surfs_wcs, surfs_ncs = [], []
 
     # Normalize surface
     if surf_masks is None: surf_masks = np.ones_like(surf_pnts[..., :1]).astype(bool)
@@ -588,34 +487,16 @@ def normalize(
         pnt_ncs = pnt_ncs * surf_mask.astype(pnt_ncs.dtype)
         surfs_ncs.append(pnt_ncs)
 
-    # Normalize edge
-    if edge_masks is None: edge_masks = np.ones_like(edge_pnts[..., :1]).astype(bool)
-    # print('[NORMALIZE] edge_mask: ', edge_pnts.shape, surf_masks.shape, np.unique(surf_masks)) 
-    for edge_idx in range(edge_pnts.shape[0]):
-        edge_pnt, edge_mask = edge_pnts[edge_idx], edge_masks[edge_idx]
-        edge_pnt_wcs = (edge_pnt - global_offset[np.newaxis, :]) / (global_scale * 0.5)
-        edge_pnt_wcs = edge_pnt_wcs * edge_mask.astype(edge_pnt_wcs.dtype)
-        edges_wcs.append(edge_pnt_wcs)
-        
-        local_offset, local_scale = _get_scale_offset(edge_pnt_wcs, edge_mask)
-        pnt_ncs = (edge_pnt_wcs - local_offset[np.newaxis, :]) / (local_scale * 0.5)
-        pnt_ncs = pnt_ncs * edge_mask.astype(pnt_ncs.dtype)
-        edges_ncs.append(pnt_ncs)
-
     surfs_wcs = np.stack(surfs_wcs)
     surfs_ncs = np.stack(surfs_ncs)
-    edges_wcs = np.stack(edges_wcs)
-    edges_ncs = np.stack(edges_ncs)
 
-    return surfs_wcs, edges_wcs, surfs_ncs, edges_ncs, corner_wcs, global_offset, global_scale
+    return surfs_wcs, surfs_ncs, global_offset, global_scale
 
 
 def process_data(
         data_item: str,
         glctx=None,
-        num_edge_samples=16,
-        num_surf_samples=256,
-        use_uni_norm=True):
+        num_surf_samples=256):
 
     # print('*** Processing data: ', data_item)
 
@@ -629,63 +510,14 @@ def process_data(
     # surf_uv: panel 3D points [num_panels, num_samples, num_samples, 3]
     if glctx is None: glctx = dr.RasterizeCudaContext()
 
-    panel_ids, panel_cls, surf_pnts, surf_uvs, surf_norms, surf_mask = prepare_surf_data(
+    _, _, surf_pnts, _, surf_norms, surf_mask = prepare_surf_data(
         glctx, mesh_obj=mesh_obj, pattern_spec=pattern_spec, reso=num_surf_samples
     )
-
-    # edge && corner
-    edge_ids, edge_pnts, edge_uvs, corner_pnts, corner_uvs, corner_normals, faceEdge_adj = prepare_edge_data(
-        mesh_obj, pattern_spec, reso=num_edge_samples
-    )
-
-    faceEdge_adj = face_edge_to_id(faceEdge_adj, panel_ids, edge_ids)
-
-    surfs_wcs, edges_wcs, surfs_ncs, edges_ncs, corner_wcs, global_offset, global_scale = normalize(
-        surf_pnts, edge_pnts, corner_pnts, surf_masks=surf_mask, 
-        global_offset=_GLOBAL_OFFSET if use_uni_norm else None, 
-        global_scale=_GLOBAL_SCALE if use_uni_norm else None)
     
-    surfs_uv_wcs, edges_uv_wcs, surfs_uv_ncs, edges_uv_ncs, corner_uv_wcs, uv_offset, uv_scale = normalize(
-        surf_uvs, edge_uvs, corner_uvs, surf_masks=surf_mask, 
-        global_offset=_GLOBAL_OFFSET_UV if use_uni_norm else None, 
-        global_scale=_GLOBAL_SCALE_UV if use_uni_norm else None
-        )
+    surf_pnts = (surf_pnts - _GLOBAL_OFFSET[np.newaxis, np.newaxis, :]) / (_GLOBAL_SCALE * 0.5)
+    print('*** surf data: ', surf_pnts.shape, surf_norms.shape, surf_mask.shape)    
+    result = np.concatenate([surf_pnts, surf_mask, surf_norms], axis=-1)        
     
-    result = {
-        'data_fp': data_item,
-        # xyz
-        'surf_cls': np.array(panel_cls, dtype=np.int32),
-        'surf_mask': surf_mask.astype(bool),
-        'surf_wcs': surfs_wcs.astype(np.float32),
-        'edge_wcs': edges_wcs.astype(np.float32),
-        'surf_ncs': surfs_ncs.astype(np.float32),
-        'edge_ncs': edges_ncs.astype(np.float32),
-        'corner_wcs': corner_wcs.astype(np.float32),
-        'global_offset': global_offset.astype(np.float32),
-        'global_scale': global_scale,
-        # uv
-        'surf_uv_wcs': surfs_uv_wcs.astype(np.float32),
-        'edge_uv_wcs': edges_uv_wcs.astype(np.float32),
-        'surf_uv_ncs': surfs_uv_ncs.astype(np.float32),
-        'edge_uv_ncs': edges_uv_ncs.astype(np.float32),
-        'corner_uv_wcs': corner_uv_wcs.astype(np.float32),
-        'uv_offset': uv_offset.astype(np.float32),
-        'uv_scale': uv_scale,
-        # normal
-        'surf_normals': surf_norms.astype(np.float32),
-        'corner_normals': corner_normals.astype(np.float32),
-        # adj
-        'faceEdge_adj': faceEdge_adj
-    }
-    
-    # Calculate bounding boxes
-    result['surf_bbox_wcs'] = _get_bbox(result['surf_wcs'], surf_mask)
-    result['edge_bbox_wcs'] = _get_bbox(result['edge_wcs'])
-    
-    # Calculating UV bounding bbox
-    result['surf_uv_bbox_wcs'] = _get_bbox(result['surf_uv_wcs'], surf_mask)
-    result['edge_uv_bbox_wcs'] = _get_bbox(result['edge_uv_wcs'])
-        
     return result
 
 
@@ -696,7 +528,6 @@ def process_item(data_idx, data_item, args, glctx):
         
         result = process_data(
             data_item, glctx=glctx, 
-            num_edge_samples=args.ne, 
             num_surf_samples=args.nf)
         
         with open(output_fp, 'wb') as f: pickle.dump(result, f)
@@ -717,7 +548,6 @@ if __name__ == '__main__':
                         help="Path to executable.")
     parser.add_argument("--use_uni_norm", action='store_true',
                         help="Whether to apply universal normalization for the output data. Use predefined global scale and offset for the whole dataset if specified otherwise calculate from each data item.")
-    parser.add_argument('--ne', default=16, type=int, help='Number of edge samples.')
     parser.add_argument('--nf', default=256, type=int, help='Number of surface samples.')
 
     args, cfg_cmd = parser.parse_known_args()

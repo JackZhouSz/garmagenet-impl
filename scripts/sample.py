@@ -4,10 +4,10 @@ import torch
 import argparse
 import numpy as np
 from tqdm import tqdm
-from network import *
+from src.network import *
 from diffusers import DDPMScheduler, PNDMScheduler
 from OCC.Extend.DataExchange import write_stl_file, write_step_file
-from utils import (
+from src.utils import (
     randn_tensor,
     compute_bbox_center_and_size,
     generate_random_string,
@@ -387,7 +387,7 @@ if __name__ == "__main__":
     args = parser.parse_args()    
 
     # Load evaluation config 
-    with open('eval_config.yaml', 'r') as file:
+    with open('../configs/eval_config.yaml', 'r') as file:
         config = yaml.safe_load(file)
     eval_args = config[args.mode]
 
