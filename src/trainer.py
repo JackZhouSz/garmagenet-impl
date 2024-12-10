@@ -5,7 +5,7 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn 
 from diffusers import AutoencoderKL, DDPMScheduler
-from .network import *
+from network import *
 
 
 class SurfVAETrainer():

@@ -1,5 +1,5 @@
 import os
-from .utils import get_args_vae
+from utils import get_args_vae
 
 # Parse input augments
 args = get_args_vae()
@@ -11,8 +11,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 if not os.path.exists(args.save_dir):
     os.makedirs(args.save_dir)
 
-from .trainer import SurfVAETrainer, EdgeVAETrainer
-from .dataset import SurfData, EdgeData
+from trainer import SurfVAETrainer, EdgeVAETrainer
+from dataset import SurfData, EdgeData
 
 def run(args):
     # Initialize dataset loader and trainer

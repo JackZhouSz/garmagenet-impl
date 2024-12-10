@@ -4,10 +4,10 @@ import torch
 import argparse
 import numpy as np
 from tqdm import tqdm
-from .network import *
+from network import *
 from diffusers import DDPMScheduler, PNDMScheduler
 from OCC.Extend.DataExchange import write_stl_file, write_step_file
-from .utils import (
+from utils import (
     randn_tensor,
     compute_bbox_center_and_size,
     generate_random_string,
