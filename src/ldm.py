@@ -1,5 +1,5 @@
 import os
-from utils import *
+from .utils import *
 
 # Parse input augments
 args = get_args_ldm()
@@ -10,8 +10,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 # Make project directory if not exist
 if not os.path.exists(args.save_dir): os.makedirs(args.save_dir)
 
-from .dataset import *
-from .trainer import *
+from .dataset import SurfPosData, SurfZData, EdgePosData, EdgeZData
+from .trainer import SurfPosTrainer, SurfZTrainer, EdgePosTrainer, EdgeZTrainer
 
 def run(args):
     # Initialize dataset and trainer

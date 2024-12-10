@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import random
 from multiprocessing.pool import Pool
-from utils import (
+from .utils import (
     rotate_point_cloud,
     bbox_corners,
     rotate_axis,
@@ -17,6 +17,8 @@ from utils import (
 
 # furniture class labels
 text2int = {'bathtub':0, 'bed':1, 'bench':2, 'bookshelf':3,'cabinet':4, 'chair':5, 'couch':6, 'lamp':7, 'sofa':8, 'table':9}
+
+
 
 
 def filter_data(data):
