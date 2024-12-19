@@ -12,9 +12,9 @@ if not os.path.exists(args.save_dir):
     os.makedirs(args.save_dir)
 
 from trainer import SurfVAETrainer
-from src.dataset import SurfData
+from datasets.brep import SurfData
 from trainer import EdgeVAETrainer
-from src.dataset import EdgeData
+from datasets.brep import EdgeData
 
 def run(args):
     # Initialize dataset loader and trainer

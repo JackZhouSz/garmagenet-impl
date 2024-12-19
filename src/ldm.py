@@ -11,7 +11,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 if not os.path.exists(args.save_dir):
     os.makedirs(args.save_dir)
 
-from src.dataset import *
+from datasets.brep import *
 from trainer import *
 
 def run(args):
