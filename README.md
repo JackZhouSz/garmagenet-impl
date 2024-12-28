@@ -73,7 +73,7 @@ Train the latent diffusion model (change path to previously trained VAEs):
 
     sh train_ldm.sh
 
-```--cf``` classifier-free training for the Furniture dataset. 
+```--use_cf``` classifier-free training for the Furniture dataset. 
 
 ```--data_aug``` randomly rotate the CAD model during training (optional).
 

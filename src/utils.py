@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import random
 import string
-import argparse
 from chamferdist import ChamferDistance
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from typing import List, Optional, Tuple, Union
@@ -98,25 +97,40 @@ def randn_tensor(
 
 
 def pad_repeat(x, max_len):
-    repeat_times = math.floor(max_len/len(x))
-    sep = max_len-repeat_times*len(x)
-    sep1 = np.repeat(x[:sep], repeat_times+1, axis=0)
-    sep2 = np.repeat(x[sep:], repeat_times, axis=0)
-    x_repeat = np.concatenate([sep1, sep2], 0)
-    return x_repeat
+    
+    rand_idx = np.random.permutation(x.shape[0])
+    if x.shape[0] >= max_len: return x[rand_idx[:max_len], ...]
+    
+    additional_sample = np.random.choice(x.shape[0], max_len-x.shape[0], replace=True)
+    rand_idx = np.concatenate([rand_idx, additional_sample])
+    rand_idx = np.random.permutation(rand_idx)
+    
+    return x[rand_idx, ...], rand_idx
+
+    # repeat_times = math.floor(max_len/len(x))
+    # sep = max_len-repeat_times*len(x)
+    # sep1 = np.repeat(x[:sep], repeat_times+1, axis=0)
+    # sep2 = np.repeat(x[sep:], repeat_times, axis=0)
+    # x_repeat = np.concatenate([sep1, sep2], 0)
+    # return x_repeat
 
 
-def pad_zero(x, max_len, return_mask=False):
+def pad_zero(x, max_len, shuffle=True, return_mask=False):
+    
+    if shuffle: x = x[np.random.permutation(x.shape[0]), :]
+    
+    if x.shape[0] >= max_len: 
+        if return_mask: return x[:max_len, ...], np.ones(max_len, dtype=bool)
+        else: return x[:max_len, ...],
+        
     keys = np.ones(len(x))
     padding = np.zeros((max_len-len(x))).astype(int)  
     mask = 1-np.concatenate([keys, padding]) == 1  
-    
     padding = np.zeros((max_len-len(x), *x.shape[1:]))
     x_padded = np.concatenate([x, padding], axis=0)
-    if return_mask:
-        return x_padded, mask
-    else:
-        return x_padded
+    
+    if return_mask: return x_padded, mask
+    else: return x_padded
 
 
 def plot_3d_bbox(ax, min_corner, max_corner, color='r'):
@@ -144,85 +158,6 @@ def plot_3d_bbox(ax, min_corner, max_corner, color='r'):
     ]
     ax.add_collection3d(Poly3DCollection(faces, facecolors='blue', linewidths=1, edgecolors=color, alpha=0))
     return
-
-
-def get_args_vae():    
-    
-    def _str2intlist(s): return list(map(int, s.split(',')))
-    
-    parser = argparse.ArgumentParser()
-
-    # Dataset configuration
-    parser.add_argument('--data', type=str, default='/data/AIGP/brebrep_reso_64_edge_snap', 
-                        help='Path to data folder')  
-    parser.add_argument('--train_list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
-                        help='Path to training list')  
-    parser.add_argument('--val_list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
-                        help='Path to validation list')  
-    parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
-    parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
-    parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
-
-    # Model parameters
-    parser.add_argument('--block_dims', type=_str2intlist, default="32,64,64,128", help='Latent dimension of each block of the UNet model.')
-    
-    # Training parameters
-    parser.add_argument("--option", type=str, choices=['surface', 'edge'], default='surface', 
-                        help="Choose between option surface or edge (default: surface)")
-    parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
-    parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')  
-    parser.add_argument("--gpu", type=int, nargs='+', default=[0], help="GPU IDs to use for training (default: [0])")
-    parser.add_argument('--batch_size', type=int, default=512, help='input batch size')
-        
-    # Logging configuration
-    parser.add_argument('--train_nepoch', type=int, default=200, help='number of epochs to train for')    
-    parser.add_argument('--save_nepoch', type=int, default=50, help='number of epochs to save model')
-    parser.add_argument('--test_nepoch', type=int, default=10, help='number of epochs to test model')
-
-    # Save dirs and reload
-    parser.add_argument('--expr', type=str, default="surface_vae", help='experiment name')
-    parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
-
-    args = parser.parse_args()
-    
-    # saved folder
-    args.log_dir = f'{args.log_dir}/{args.expr}'
-    
-    return args
-
-
-def get_args_ldm():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data_process/deepcad_parsed', 
-                        help='Path to data folder')  
-    parser.add_argument('--list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
-                        help='Path to data list')  
-    parser.add_argument('--surfvae', type=str, default='log/deepcad_surfvae/epoch_400.pt', 
-                        help='Path to pretrained surface vae weights')  
-    parser.add_argument('--edgevae', type=str, default='log/deepcad_edgevae/epoch_300.pt', 
-                        help='Path to pretrained edge vae weights')  
-    parser.add_argument("--option", type=str, choices=['surfpos', 'surfz', 'edgepos', 'edgez'], default='surfpos', 
-                        help="Choose between option [surfpos,edgepos,surfz,edgez] (default: surfpos)")
-    # Training parameters
-    parser.add_argument('--batch_size', type=int, default=512, help='input batch size')  
-    parser.add_argument('--train_nepoch', type=int, default=3000, help='number of epochs to train for')
-    parser.add_argument('--test_nepoch', type=int, default=25, help='number of epochs to test model')
-    parser.add_argument('--save_nepoch', type=int, default=50, help='number of epochs to save model')
-    parser.add_argument('--max_face', type=int, default=50, help='maximum number of faces')
-    parser.add_argument('--max_edge', type=int, default=30, help='maximum number of edges per face')
-    parser.add_argument('--threshold', type=float, default=0.05, help='minimum threshold between two faces')
-    parser.add_argument('--bbox_scaled', type=float, default=3, help='scaled the bbox')
-    parser.add_argument('--z_scaled', type=float, default=1, help='scaled the latent z')
-    parser.add_argument("--gpu", type=int, nargs='+', default=[0, 1], help="GPU IDs to use for training (default: [0, 1])")
-    parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
-    parser.add_argument("--cf",  action='store_true', help='Use data augmentation')
-    # Save dirs and reload
-    parser.add_argument('--env', type=str, default="surface_pos", help='environment')
-    parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
-    args = parser.parse_args()
-    # saved folder
-    args.log_dir = f'{args.log_dir}/{args.expr}'
-    return args
 
 
 def rotate_point_cloud(point_cloud, angle_degrees, axis):

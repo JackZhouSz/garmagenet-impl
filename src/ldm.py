@@ -1,19 +1,56 @@
 import os
-from utils import *
+import argparse
 
-# Parse input augments
-args = get_args_ldm()
-
-# Set PyTorch to use only the specified GPU
-os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
-
-# Make project directory if not exist
-if not os.path.exists(args.log_dir): os.makedirs(args.log_dir)
-
-from datasets.brep import *
+from datasets.sxd import *
 from trainer import *
 
+
+def get_args_ldm():
+    parser = argparse.ArgumentParser()
+    # parser.add_argument('--dataset', type=str, default='sxd', choices=['sxd', 'brep'],
+    #                     help='Dataset type, choose between [sxd, brep]')
+    parser.add_argument('--data', type=str, default='data_process/deepcad_parsed', 
+                        help='Path to data folder')  
+    parser.add_argument('--list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
+                        help='Path to data list')  
+    parser.add_argument('--surfvae', type=str, default='log/deepcad_surfvae/epoch_400.pt', 
+                        help='Path to pretrained surface vae weights')  
+    parser.add_argument("--option", type=str, choices=['surfpos', 'surfz'], default='surfpos', 
+                        help="Choose between option [surfpos,edgepos,surfz,edgez] (default: surfpos)")
+    
+    # Training parameters
+    parser.add_argument('--batch_size', type=int, default=512, help='input batch size')  
+    parser.add_argument('--train_nepoch', type=int, default=3000, help='number of epochs to train for')
+    parser.add_argument('--test_nepoch', type=int, default=25, help='number of epochs to test model')
+    parser.add_argument('--save_nepoch', type=int, default=50, help='number of epochs to save model')
+    
+    # Dataset parameters
+    parser.add_argument('--max_face', type=int, default=50, help='maximum number of faces')
+    parser.add_argument('--threshold', type=float, default=0.01, help='minimum threshold between two faces')
+    parser.add_argument('--bbox_scaled', type=float, default=3, help='scaled the bbox')
+    parser.add_argument('--z_scaled', type=float, default=1, help='scaled the latent z')
+    parser.add_argument("--gpu", type=int, nargs='+', default=[0, 1], help="GPU IDs to use for training (default: [0, 1])")
+    parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation.')
+    parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
+    parser.add_argument("--padding", default="repeat", type=str, choices=['repeat', 'zero'])
+
+    # Model parameters
+    parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5'], help="Text encoder when applying text as generation condition.")
+    
+    # Save dirs and reload
+    parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
+    parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
+    args = parser.parse_args()
+    # saved folder
+    args.log_dir = f'{args.log_dir}/{args.expr}'
+    return args
+
+
+
 def run(args):
+    
+    # datamodule = getattr(datasets, args.datasets)
+    
     # Initialize dataset and trainer
     if args.option == 'surfpos':
         train_dataset = SurfPosData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
@@ -24,16 +61,7 @@ def run(args):
         train_dataset = SurfZData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
         val_dataset = SurfZData(args.data, args.list, validate=True, aug=False, args=args)
         ldm = SurfZTrainer(args, train_dataset, val_dataset)
-
-    elif args.option == 'edgepos':
-        train_dataset = EdgePosData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
-        val_dataset = EdgePosData(args.data, args.list, validate=True, aug=False, args=args)
-        ldm = EdgePosTrainer(args, train_dataset, val_dataset)
-
-    elif args.option == 'edgez':
-        train_dataset = EdgeZData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
-        val_dataset = EdgeZData(args.data, args.list, validate=True, aug=False, args=args)
-        ldm = EdgeZTrainer(args, train_dataset, val_dataset)
+        
 
     else:
         assert False, 'please choose between [surfpos, surfz, edgepos, edgez]'
@@ -58,4 +86,14 @@ def run(args):
 
 
 if __name__ == "__main__":
+    
+    # Parse input augments
+    args = get_args_ldm()
+
+    # Set PyTorch to use only the specified GPU
+    os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
+
+    # Make project directory if not exist
+    if not os.path.exists(args.log_dir): os.makedirs(args.log_dir)
+    
     run(args)

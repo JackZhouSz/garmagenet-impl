@@ -305,8 +305,7 @@ class SurfZData(torch.utils.data.Dataset):
         else:
             data_path = self.data[index]
 
-        with open(data_path, "rb") as tf:
-            data = pickle.load(tf)
+        with open(data_path, "rb") as tf: data = pickle.load(tf)
         _, _, surf_ncs, _, _, _, _, _, surf_pos, _, _, _ = data.values()
 
         # Data augmentation
