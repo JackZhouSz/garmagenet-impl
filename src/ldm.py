@@ -6,6 +6,9 @@ from trainer import *
 
 
 def get_args_ldm():
+    
+    def _str2intlist(s): return list(map(int, s.split(',')))
+    
     parser = argparse.ArgumentParser()
     # parser.add_argument('--dataset', type=str, default='sxd', choices=['sxd', 'brep'],
     #                     help='Dataset type, choose between [sxd, brep]')
@@ -17,25 +20,27 @@ def get_args_ldm():
                         help='Path to pretrained surface vae weights')  
     parser.add_argument("--option", type=str, choices=['surfpos', 'surfz'], default='surfpos', 
                         help="Choose between option [surfpos,edgepos,surfz,edgez] (default: surfpos)")
+    parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
     
     # Training parameters
     parser.add_argument('--batch_size', type=int, default=512, help='input batch size')  
     parser.add_argument('--train_nepoch', type=int, default=3000, help='number of epochs to train for')
-    parser.add_argument('--test_nepoch', type=int, default=25, help='number of epochs to test model')
-    parser.add_argument('--save_nepoch', type=int, default=50, help='number of epochs to save model')
+    parser.add_argument('--test_nepoch', type=int, default=2, help='number of epochs to test model')
+    parser.add_argument('--save_nepoch', type=int, default=5, help='number of epochs to save model')
     
     # Dataset parameters
     parser.add_argument('--max_face', type=int, default=50, help='maximum number of faces')
     parser.add_argument('--threshold', type=float, default=0.01, help='minimum threshold between two faces')
-    parser.add_argument('--bbox_scaled', type=float, default=3, help='scaled the bbox')
+    parser.add_argument('--bbox_scaled', type=float, default=1.0, help='scaled the bbox')
     parser.add_argument('--z_scaled', type=float, default=1, help='scaled the latent z')
     parser.add_argument("--gpu", type=int, nargs='+', default=[0, 1], help="GPU IDs to use for training (default: [0, 1])")
     parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation.')
     parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
-    parser.add_argument("--padding", default="repeat", type=str, choices=['repeat', 'zero'])
+    parser.add_argument("--padding", default="zero", type=str, choices=['repeat', 'zero'])
 
     # Model parameters
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5'], help="Text encoder when applying text as generation condition.")
+    parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
     
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
@@ -58,8 +63,11 @@ def run(args):
         ldm = SurfPosTrainer(args, train_dataset, val_dataset)
 
     elif args.option == 'surfz':
-        train_dataset = SurfZData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
-        val_dataset = SurfZData(args.data, args.list, validate=True, aug=False, args=args)
+        train_dataset = SurfZData(
+            args.data, args.list, validate=False, aug=args.data_aug, 
+            pad_mode=args.padding, args=args)
+        val_dataset = SurfZData(
+            args.data, args.list, validate=True, aug=False, pad_mode=args.padding, args=args)
         ldm = SurfZTrainer(args, train_dataset, val_dataset)
         
 

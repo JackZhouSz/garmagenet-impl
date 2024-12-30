@@ -34,7 +34,8 @@ class SurfVAETrainer():
         num_channels = train_dataset.num_channels
         sample_size = train_dataset.resolution
 
-        model = AutoencoderKL(in_channels=num_channels,
+        model = AutoencoderKL(
+            in_channels=num_channels,
             out_channels=num_channels,
             down_block_types=['DownEncoderBlock2D']*len(args.block_dims),
             up_block_types= ['UpDecoderBlock2D']*len(args.block_dims),
@@ -122,7 +123,6 @@ class SurfVAETrainer():
         self.train_dataset.update()
         self.train_dataloader = torch.utils.data.DataLoader(
             self.train_dataset, shuffle=True, batch_size=self.batch_size, num_workers=8)
-        
         self.epoch += 1 
         
         return 
@@ -178,7 +178,6 @@ class SurfVAETrainer():
         return
     
     
-
 class SurfPosTrainer():
     """ Surface Position Trainer (3D bbox) """
     def __init__(self, args, train_dataset, val_dataset): 
@@ -341,7 +340,6 @@ class SurfPosTrainer():
         return
 
 
-
 class SurfZTrainer():
     """ Surface Latent Geometry Trainer """
     def __init__(self, args, train_dataset, val_dataset): 
@@ -349,33 +347,47 @@ class SurfZTrainer():
         self.iters = 0
         self.epoch = 0
         self.log_dir = args.log_dir
-        self.use_cf = args.use_cf
         self.z_scaled = args.z_scaled
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # Initialize network
-        model = SurfZNet(self.use_cf)
-        model = nn.DataParallel(model) # distributed training 
-        self.model = model.to(self.device).train()
         
-        num_channels = train_dataset.num_channels
-        sample_size = train_dataset.resolution
-
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+        self.batch_size = args.batch_size
+        
+        pos_dim = self.train_dataset.pos_dim        
+        num_channels = self.train_dataset.num_channels
+        sample_size = self.train_dataset.resolution
+        latent_channels = 8
+        
         # Load pretrained surface vae (fast encode version)
-        model = AutoencoderKLFastEncode(in_channels=num_channels,
+        surf_vae = AutoencoderKLFastEncode(
+            in_channels=num_channels,
             out_channels=num_channels,
             down_block_types=['DownEncoderBlock2D']*len(args.block_dims),
             up_block_types= ['UpDecoderBlock2D']*len(args.block_dims),
             block_out_channels=args.block_dims,
             layers_per_block=2,
             act_fn='silu',
-            latent_channels=8,
+            latent_channels=latent_channels,
             norm_num_groups=8,
             sample_size=sample_size,
         )
+        
         surf_vae.load_state_dict(torch.load(args.surfvae), strict=False)
         surf_vae = nn.DataParallel(surf_vae) # distributed inference 
         self.surf_vae = surf_vae.to(self.device).eval()
+        
+        train_dataset.init_encoder(self.surf_vae)
+        val_dataset.init_encoder(self.surf_vae)
+                
+        # Initialize network
+        model = SurfZNet(
+            p_dim=pos_dim*2,
+            z_dim=(sample_size//(2**(len(args.block_dims)-1)))**2 * latent_channels,
+            num_cf=train_dataset.num_classes
+            )
+        model = nn.DataParallel(model) # distributed training 
+        self.model = model.to(self.device).train()
 
         self.loss_fn = nn.MSELoss()
 
@@ -406,13 +418,13 @@ class SurfZTrainer():
         wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
 
         # Initilizer dataloader
-        self.train_dataloader = torch.utils.data.DataLoader(train_dataset, 
+        self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, 
                                                 shuffle=True, 
-                                                batch_size=args.batch_size,
+                                                batch_size=self.batch_size,
                                                 num_workers=16)
-        self.val_dataloader = torch.utils.data.DataLoader(val_dataset, 
+        self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, 
                                              shuffle=False, 
-                                             batch_size=args.batch_size,
+                                             batch_size=self.batch_size,
                                              num_workers=16)
         return
     
@@ -429,41 +441,61 @@ class SurfZTrainer():
         # Train    
         for data in self.train_dataloader:
             with torch.cuda.amp.autocast():
-                data_cuda = [x.to(self.device) for x in data] # map to gpu               
-                if self.use_cf:
-                    surfPos, surfPnt, surf_mask, class_label = data_cuda 
-                else:
-                    surfPos, surfPnt, surf_mask = data_cuda
-                    class_label = None
-
-                bsz = len(surfPos)
-
-                # Augment the surface position (see https://arxiv.org/abs/2106.15282)
-                conditions = [surfPos]
-                aug_data = []
-                for data in conditions:
-                    aug_timesteps = torch.randint(0, 15, (bsz,), device=self.device).long()
-                    aug_noise = torch.randn(data.shape).to(self.device)  
-                    aug_data.append(self.noise_scheduler.add_noise(data, aug_noise, aug_timesteps))
-                surfPos = aug_data[0]
-
-                # Pass through surface VAE to sample latent z 
-                with torch.no_grad():
-                    surf_uv = surfPnt.flatten(0,1).permute(0,3,1,2)
-                    surf_z = self.surf_vae(surf_uv)
-                    surf_z = surf_z.unflatten(0, (bsz, -1)).flatten(-2,-1).permute(0,1,3,2)     
-
-                surfZ = surf_z.flatten(-2,-1)  * self.z_scaled # rescaled the latent z
+                # surfPos, surfPnt, surf_mask, surf_cls, caption = data
+                # surfPos, surfPnt, surf_mask, surf_cls = \
+                #     surfPos.to(self.device), surfPnt.to(self.device), \
+                #     surf_mask.to(self.device), surf_cls.to(self.device)
                 
+                # bsz = len(surfPos)
+
+                # # Augment the surface position (see https://arxiv.org/abs/2106.15282)
+                # conditions = [surfPos]
+                # aug_data = []
+                # for data in conditions:
+                #     aug_timesteps = torch.randint(0, 15, (bsz,), device=self.device).long()
+                #     aug_noise = torch.randn(data.shape).to(self.device)  
+                #     aug_data.append(self.noise_scheduler.add_noise(data, aug_noise, aug_timesteps))
+                # surfPos = aug_data[0]
+
+                # # Pass through surface VAE to sample latent z 
+                # with torch.no_grad():
+                #     surf_uv = surfPnt.flatten(0,1).permute(0,3,1,2).to(self.device)
+                #     # print('*** surf_uv: ', surf_uv.shape)
+                #     surf_z = self.surf_vae(surf_uv)
+                #     # print('*** surf_z: ', surf_z.shape)
+                #     surf_z = surf_z.unflatten(0, (bsz, -1)).flatten(-2,-1).permute(0,1,3,2)     
+                #     # print('*** surf_z unflatten: ', surf_z.shape)
+
+                # surfZ = surf_z.flatten(-2, -1)  * self.z_scaled # rescaled the latent z
+                
+                # print('*** surfZ: ', surfZ.shape)
+                
+                surfPos, surfZ, surf_mask, surf_cls, caption = data
+                surfPos, surfZ, surf_mask, surf_cls = \
+                    surfPos.to(self.device), surfZ.to(self.device), \
+                    surf_mask.to(self.device), surf_cls.to(self.device)
+                                        
+                bsz = len(surfPos)
+                
+                # Augment the surface position (see https://arxiv.org/abs/2106.15282)
+                if torch.rand(1) > 0.3:
+                    aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
+                    aug_noise = torch.randn(surfPos.shape).to(self.device)
+                    surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
+                
+                surfZ = surfZ * self.z_scaled                
+
                 self.optimizer.zero_grad() # zero gradient
 
                 # Add noise
                 timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
                 surfZ_noise = torch.randn(surfZ.shape).to(self.device)  
                 surfZ_diffused = self.noise_scheduler.add_noise(surfZ, surfZ_noise, timesteps)
+                
+                # print('*** surfZ_diffused: ', surfZ_diffused.shape)
 
                 # Predict noise
-                surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, class_label, True)
+                surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, True)
 
                 # Loss
                 total_loss = self.loss_fn(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask])        
@@ -482,6 +514,11 @@ class SurfZTrainer():
             progress_bar.update(1)
 
         progress_bar.close()
+                # update train dataset
+        self.train_dataset.update()        
+        self.train_dataloader = torch.utils.data.DataLoader(
+            self.train_dataset, shuffle=True, 
+            batch_size=self.batch_size, num_workers=16)
         self.epoch += 1 
         return 
     
@@ -500,20 +537,14 @@ class SurfZTrainer():
         total_loss = [0]*5
 
         for data in self.val_dataloader:
-            data_cuda = [x.to(self.device) for x in data] # map to gpu
-            if self.use_cf:
-                surfPos, surfPnt, surf_mask, class_label = data_cuda 
-            else:
-                surfPos, surfPnt, surf_mask = data_cuda
-                class_label = None
+            surfPos, surfZ, surf_mask, surf_cls, caption = data
+            surfPos, surfZ, surf_mask, surf_cls = \
+                surfPos.to(self.device), surfZ.to(self.device), \
+                surf_mask.to(self.device), surf_cls.to(self.device)
+            
             bsz = len(surfPos)
-
-            # Pass through surface VAE to sample latent z 
-            with torch.no_grad():
-                surf_uv = surfPnt.flatten(0,1).permute(0,3,1,2)
-                surf_z = self.surf_vae(surf_uv)
-            surf_z = surf_z.unflatten(0, (bsz, -1)).flatten(-2,-1).permute(0,1,3,2)    
-            tokens = surf_z.flatten(-2,-1)  * self.z_scaled # rescaled the latent z
+                        
+            tokens = surfZ = surfZ * self.z_scaled    
 
             total_count += len(surfPos)
             
@@ -523,7 +554,7 @@ class SurfZTrainer():
                 noise = torch.randn(tokens.shape).to(self.device)  
                 diffused = self.noise_scheduler.add_noise(tokens, noise, timesteps)
                 with torch.no_grad():
-                    pred = self.model(diffused, timesteps, surfPos, surf_mask, class_label)
+                    pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls)
                 loss = mse_loss(pred[~surf_mask], noise[~surf_mask]).mean(-1).sum().item()
                 total_loss[idx] += loss
 
@@ -533,6 +564,12 @@ class SurfZTrainer():
         mse = [loss/total_count for loss in total_loss]
         self.model.train() # set to train
         wandb.log({"Val-010": mse[0], "Val-050": mse[1], "Val-100": mse[2], "Val-200": mse[3], "Val-500": mse[4]}, step=self.iters)
+        
+        self.val_dataset.update()
+        self.val_dataloader = torch.utils.data.DataLoader(
+            self.val_dataset, shuffle=False, 
+            batch_size=self.batch_size, num_workers=16)
+        
         return
     
 

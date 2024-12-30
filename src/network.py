@@ -1069,18 +1069,19 @@ class SurfPosNet(nn.Module):
     Transformer-based latent diffusion model for surface position
     """
 
-    def __init__(self, use_cf):
+    def __init__(self, p_dim=6, embed_dim=768, num_cf=-1):
         super(SurfPosNet, self).__init__()
         
-        self.embed_dim = 768
-        self.use_cf = use_cf
+        self.p_dim = p_dim
+        self.embed_dim = embed_dim
+        self.use_cf = num_cf > 0
 
         layer = nn.TransformerEncoderLayer(d_model=self.embed_dim, nhead=12, norm_first=True,
                                                    dim_feedforward=1024, dropout=0.1)
         self.net = nn.TransformerEncoder(layer, 12, nn.LayerNorm(self.embed_dim))
 
         self.p_embed = nn.Sequential(
-            nn.Linear(6, self.embed_dim),
+            nn.Linear(self.p_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.SiLU(),
             nn.Linear(self.embed_dim, self.embed_dim),
@@ -1097,11 +1098,12 @@ class SurfPosNet(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.SiLU(),
-            nn.Linear(self.embed_dim, 6),
+            nn.Linear(self.embed_dim, self.p_dim),
         )
 
-        if self.use_cf:
-            self.class_embed = Embedder(11, self.embed_dim)
+        if self.use_cf: 
+            self.class_embed = Embedder(num_cf, self.embed_dim)
+            print(self.class_embed)
 
         return
 
@@ -1132,24 +1134,35 @@ class SurfZNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
     """
-    def __init__(self, use_cf):
+    def __init__(self, p_dim=6, z_dim=3*16, embed_dim=768, num_cf=-1):
         super(SurfZNet, self).__init__()
-        self.embed_dim = 768
-        self.use_cf = use_cf
+        self.p_dim = p_dim
+        self.z_dim = z_dim
+        self.embed_dim = embed_dim
+        self.use_cf = num_cf > 0
+        
+        self.n_heads = 12
 
-        layer = nn.TransformerEncoderLayer(d_model=self.embed_dim, nhead=12, norm_first=True,
-                                                   dim_feedforward=1024, dropout=0.1)
-        self.net = nn.TransformerEncoder(layer, 12, nn.LayerNorm(self.embed_dim))
+        layer = nn.TransformerEncoderLayer(
+            d_model=self.embed_dim, 
+            nhead=self.n_heads, 
+            norm_first=True,
+            dim_feedforward=1024, 
+            dropout=0.1
+            )
+        
+        self.net = nn.TransformerEncoder(
+            layer, self.n_heads, nn.LayerNorm(self.embed_dim))
 
         self.z_embed = nn.Sequential(
-            nn.Linear(3*16, self.embed_dim),
+            nn.Linear(self.z_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.SiLU(),
             nn.Linear(self.embed_dim, self.embed_dim),
         )
 
         self.p_embed = nn.Sequential(
-            nn.Linear(6, self.embed_dim),
+            nn.Linear(self.p_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.SiLU(),
             nn.Linear(self.embed_dim, self.embed_dim),
@@ -1166,11 +1179,11 @@ class SurfZNet(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.SiLU(),
-            nn.Linear(self.embed_dim, 3*16),
+            nn.Linear(self.embed_dim, self.z_dim),
         )
 
         if self.use_cf:
-            self.class_embed = Embedder(11, self.embed_dim)
+            self.class_embed = Embedder(num_cf, self.embed_dim)
 
         return
 
@@ -1179,6 +1192,10 @@ class SurfZNet(nn.Module):
         """ forward pass """
         bsz = timesteps.size(0)
 
+        # print('[MODEL] surfZ', surfZ.size())
+        # print('[MODEL] timesteps', timesteps.size())
+        # print('[MODEL] surfPos', surfPos.size())
+        
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1) 
         z_embeds = self.z_embed(surfZ) 
         p_embeds = self.p_embed(surfPos)
@@ -1192,6 +1209,8 @@ class SurfZNet(nn.Module):
             tokens = z_embeds + p_embeds + time_embeds + c_embeds
         else:
             tokens = z_embeds + p_embeds + time_embeds
+
+        # print('[MODEL] tokens: ', tokens.size())
 
         output = self.net(
             src=tokens.permute(1,0,2),

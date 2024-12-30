@@ -55,10 +55,10 @@ def run(args):
     # Initialize dataset loader and trainer
     train_dataset = SurfData(
         args.data, args.train_list, data_fields=args.data_fields, 
-        validate=False, aug=args.data_aug, chunk_size=args.chunksize)
+        validate=False, aug=args.data_aug, chunksize=args.chunksize)
     val_dataset = SurfData(
         args.data, args.val_list, data_fields=args.data_fields, 
-        validate=True, aug=False, chunk_size=args.chunksize)
+        validate=True, aug=False, chunksize=args.chunksize)
     vae = SurfVAETrainer(args, train_dataset, val_dataset)
 
     # Main training loop

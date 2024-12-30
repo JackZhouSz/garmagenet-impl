@@ -17,9 +17,10 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
 ### StyleXD - SurfZ
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/epoch_600.pt --gpu 0 1 \
-    --expr stylexd_surfz_xyzuv --train_nepoch 6000 --batch_size 256 \
-    --block_dims 16,32,32,64,64,128 --max_face 32 --bbox_scaled 1.0 \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/epoch_1800.pt --gpu 0 1 \
+    --expr stylexd_surfz_xyzuv --train_nepoch 50000 --test_nepoch 20 --save_nepoch 100 \
+    --batch_size 128 --chunksize 256 \
+    --block_dims 16 32 32 64 64 128 --max_face 32 --bbox_scaled 1.0 \
     --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
 
 ### Training DeepCAD Latent Diffusion Model ###  
