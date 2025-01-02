@@ -14,6 +14,7 @@ from matplotlib import pyplot as plt
 from diffusers import DDPMScheduler, PNDMScheduler
 
 from utils import randn_tensor
+from vis import draw_bbox_3D
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -44,6 +45,9 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
     bbox_threshold = eval_args['bbox_threshold']
     save_folder = eval_args['save_folder']
     num_surfaces = eval_args['num_surfaces']
+    block_dims = eval_args['block_dims']
+    z_scale = eval_args['z_scale']
+    num_classes = eval_args['num_classes']
 
     if eval_args['use_cf']:
         class_label = torch.LongTensor([text2int[eval_args['class_label']]] * batch_size + \
@@ -52,37 +56,36 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
     else:
         class_label = None
 
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
+    if not os.path.exists(save_folder): os.makedirs(save_folder)
 
-    surfPos_model = SurfPosNet(eval_args['use_cf'])
+    surfPos_model = SurfPosNet(p_dim=10, num_cf=11)
     surfPos_model.load_state_dict(torch.load(eval_args['surfpos_weight'])['model_state_dict'])
     surfPos_model = surfPos_model.to(device).eval()
+    print('[DONE] Load SurfPosNet model.')
 
-    surfZ_model = SurfZNet(eval_args['use_cf'])
-    state_dict = torch.load(eval_args['surfz_weight'])['model_state_dict']
+    surfZ_model = SurfZNet(p_dim=10, z_dim=8*8*8, num_cf=-1)
+    state_dict = torch.load(eval_args['surfz_weight'])['model']
     surfZ_model.load_state_dict(state_dict)
-
-    # surfZ_model.load_state_dict(torch.load(eval_args['surfz_weight']))
     surfZ_model = surfZ_model.to(device).eval()
+    print('[DONE] Load SurfZ model.')
+    
 
     surf_vae = AutoencoderKLFastDecode(in_channels=6,
                                        out_channels=6,
-                                       down_block_types=['DownEncoderBlock2D', 'DownEncoderBlock2D',
-                                                         'DownEncoderBlock2D', 'DownEncoderBlock2D'],
-                                       up_block_types=['UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D',
-                                                       'UpDecoderBlock2D'],
-                                       block_out_channels=[128, 256, 512, 512],
+                                       down_block_types=['DownEncoderBlock2D']*len(block_dims),
+                                       up_block_types=['UpDecoderBlock2D']*len(block_dims),
+                                       block_out_channels=block_dims,
                                        layers_per_block=2,
                                        act_fn='silu',
-                                       latent_channels=3,
-                                       norm_num_groups=32,
-                                       sample_size=512,
+                                       latent_channels=8,
+                                       norm_num_groups=8,
+                                       sample_size=256
                                        )
         
     surf_vae.load_state_dict(torch.load(eval_args['surfvae_weight']), strict=False)
-    surf_vae = nn.DataParallel(surf_vae)  # distributed inference
+    # surf_vae = nn.DataParallel(surf_vae)  # distributed inference
     surf_vae = surf_vae.to(device).eval()
+    print('[DONE] Load SurfVAE model.')
 
     pndm_scheduler = PNDMScheduler(
         num_train_timesteps=1000,
@@ -158,7 +161,7 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
                     
                     bboxes = non_repeat.reshape(len(non_repeat), -1)
                     surf_mask = torch.zeros((1, len(bboxes))) == 1
-                    bbox_padded = torch.concat([torch.FloatTensor(bboxes), torch.zeros(num_surfaces - len(bboxes), 10)])###################################
+                    bbox_padded = torch.concat([torch.FloatTensor(bboxes), torch.zeros(num_surfaces - len(bboxes), 10)]) ###################################
                     mask_padded = torch.concat([surf_mask, torch.zeros(1, num_surfaces - len(bboxes)) == 0], -1)
                     surfPos_deduplicate.append(bbox_padded)
                     surfMask_deduplicate.append(mask_padded)
@@ -173,24 +176,24 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
             #################################
             # STEP 1-3:  generate surface z #
             #################################
-            surfZ = randn_tensor((batch_size, num_surfaces, 192)).to(device)  # 1 30 192
+            surfZ = randn_tensor((batch_size, num_surfaces, 8*8*8)).to(device)  # 1 30 192
 
             pndm_scheduler.set_timesteps(200)
             for t in tqdm(pndm_scheduler.timesteps):
                 timesteps = t.reshape(-1).to(device)
-                if class_label is not None:
-                    _surfZ_ = surfZ.repeat(2, 1, 1)
-                    _surfPos_ = surfPos.repeat(2, 1, 1)
-                    _surfMask_ = surfMask.repeat(2, 1)
-                    pred = surfZ_model(_surfZ_, timesteps, _surfPos_, _surfMask_, class_label)
-                    pred = pred[:batch_size] * (1 + w) - pred[batch_size:] * w
-                else:
-                    pred = surfZ_model(surfZ, timesteps, surfPos, surfMask, class_label)
-                
+                # if class_label is not None:
+                #     _surfZ_ = surfZ.repeat(2, 1, 1)
+                #     _surfPos_ = surfPos.repeat(2, 1, 1)
+                #     _surfMask_ = surfMask.repeat(2, 1)
+                #     pred = surfZ_model(_surfZ_, timesteps, _surfPos_, _surfMask_, class_label)
+                #     pred = pred[:batch_size] * (1 + w) - pred[batch_size:] * w
+                # else:
+                pred = surfZ_model(surfZ, timesteps, surfPos, surfMask, None)
                 surfZ = pndm_scheduler.step(pred, t, surfZ).prev_sample
 
+            surfZ = surfZ / z_scale
             surf_ncs = surf_vae(
-                surfZ.unflatten(-1, torch.Size([64, 3])).flatten(0, 1).permute(0, 2, 1).unflatten(-1,torch.Size([8,8]))) # 8 * 8 or 16 * 4 ？  in 120 3 8 8
+                surfZ.unflatten(-1, torch.Size([8*8, 8])).flatten(0, 1).permute(0, 2, 1).unflatten(-1,torch.Size([8, 8]))) # 8 * 8 or 16 * 4 ？  in 120 3 8 8
 
             # remove duplicate surfaces (i.e. masked)
             surfMask = surfMask.squeeze(0)
@@ -294,6 +297,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, choices=['abc', 'deepcad', 'furniture', 'sxd'], default='sxd',
                         help="Choose between evaluation mode [abc/deepcad/furniture] (default: abc)")
+    parser.add_argument('-c', '--config', type=str, default='configs/eval_config.yaml', help='Evaluation configuration file')
     parser.add_argument('-o', '--out_dir', type=str, default='generated', help='Output directory (default: generated)')
     parser.add_argument("-n", "--num_samples", type=int, default=1, help="Number of samples to generate (default: 1)")
     parser.add_argument("-v", "--vis", action='store_true', help="Visualize the generated samples (default: False)")
@@ -302,9 +306,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Load evaluation config
-    with open('eval_config.yaml', 'r') as file:
-        config = yaml.safe_load(file)
-    eval_args = config[args.mode]
-
-    # while (True):
+    with open(args.config, 'rb') as file: eval_args = yaml.safe_load(file)[args.mode]
     for i in range(args.num_samples): sample(eval_args, out_dir=f"{args.out_dir}/{i:04d}", vis=args.vis, dedup=args.dedupe)

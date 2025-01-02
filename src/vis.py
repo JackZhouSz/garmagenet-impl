@@ -135,53 +135,5 @@ def _create_bounding_box_mesh(min_point, max_point, color, opacity=0.2):
     return mesh
 
 
-def draw_bbox_3D(bbox_sets, colors=None):
-    
-    assert bbox_set.shape[-1] == 6, "Expect 3D bounding boxes with bbox_set.shape[-1] == 6, got %d."%(bbox_set.shape[-1])
-    
-    if len(bbox_sets.shape) == 2: bbox_sets = bbox_sets[None, ...]
-    
-    num_plots = bbox_sets.shape[0]
-    fig = make_subplots(rows=1, cols=num_plots)
-    
-    for s_idx in range(num_plots):
-        bbox_set = bbox_sets[s_idx, ...]  # (N, 3)
-        
-        for b_idx in range(len(bbox_set)):
-            min_point, max_point = bbox_set[b_idx, :3], bbox_set[b_idx, 3:]
-            
-    fig.update_layout(
-        scene=dict(
-            xaxis=dict(
-                visible=False,
-                showbackground=False,
-                showgrid=False,
-                showline=False,
-                showticklabels=False,
-                title=''
-            ),
-            yaxis=dict(
-                visible=False,
-                showbackground=False,
-                showgrid=False,
-                showline=False,
-                showticklabels=False,
-                title=''
-            ),
-            zaxis=dict(
-                visible=False,
-                showbackground=False,
-                showgrid=False,
-                showline=False,
-                showticklabels=False,
-                title=''
-            ),
-            aspectmode='data'  # Keep the aspect ratio of data
-        ),
-        margin=dict(r=0, l=0, b=0, t=0),
-        showlegend=True
-    )      
-        
-        
-def draw_bbox_2D(bbox_sets, colors=None):
-    raise NotImplementedError
+def draw_geometry(surf_pos, surf_ncs):
+    pass

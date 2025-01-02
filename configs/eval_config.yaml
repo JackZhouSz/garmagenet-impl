@@ -45,4 +45,19 @@ furniture:
   num_edges:      40
   use_cf:         True
   class_label:    chair # option: [bathtub/bed/bench/bookshelf/cabinet/chair/couch/lamp/sofa/table]
-          
+
+sxd:
+  surfpos_weight: /data/lry/code/dy/checkpoint/6G/ldm/surfpos.pt
+  surfz_weight:   /data/lry/code/style3d_gen/log/stylexd_surfz_xyzuv_pad_zero/epoch_2500.pt
+  surfvae_weight: /data/lry/code/style3d_gen/log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt
+  save_folder:    generated
+  batch_size:     1
+  z_threshold:    0.2
+  z_scale:        1.8653
+  bbox_threshold: 0.1
+  num_surfaces:   32
+  num_edges:      30
+  block_dims:     [16,32,32,64,64,128]
+  num_classes:    -1
+  use_cf:         True
+  class_label:    'class1'

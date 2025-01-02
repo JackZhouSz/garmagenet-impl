@@ -96,7 +96,7 @@ class SurfVAETrainer():
 
                 # Pass through VAE 
                 posterior = self.model.encode(surf_uv).latent_dist
-                z = posterior.sample()
+                z = posterior.sample()      # = posterior.mean + torch.randn_like(posterior.std)*posterior.std
                 dec = self.model.decode(z).sample
 
                 # Loss functions
@@ -112,7 +112,12 @@ class SurfVAETrainer():
 
             # logging
             if self.iters % 10 == 0:
-                wandb.log({"Loss-mse": mse_loss, "Loss-kl": kl_loss, "z_min": z.min(), "z_max": z.max()}, step=self.iters)
+                _z = posterior.mode()
+                wandb.log({
+                    "loss-mse": mse_loss, "loss-kl": kl_loss, 
+                    "z-min": z.min(), "z-max": z.max(), "z-mean": z.mean(), "z-std": z.std(), 
+                    "mode-min": _z.min(), "mode-max": _z.max(), "mode-mean": _z.mean(), "mode-std": _z.std() 
+                    }, step=self.iters)
 
             self.iters += 1
             progress_bar.update(1)
@@ -174,8 +179,11 @@ class SurfVAETrainer():
     
     
     def save_model(self):
+        ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
+        os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save(
-            self.model.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
+            self.model.state_dict(), 
+            os.path.join(ckpt_log_dir, f'vae_e{self.epoch:4d}.pt'))
         return
     
     
@@ -332,9 +340,13 @@ class SurfPosTrainer():
         
         return
     
-
+    
     def save_model(self):
-        torch.save(self.model.module.state_dict(), os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
+        ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
+        os.makedirs(ckpt_log_dir, exist_ok=True)
+        torch.save(
+            self.model.module.state_dict(), 
+            os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:4d}.pt'))
         return
 
 
@@ -348,34 +360,34 @@ class SurfZTrainer():
         self.log_dir = args.log_dir
         self.z_scaled = args.z_scaled
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
                 
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.batch_size = args.batch_size
         
-        pos_dim = self.train_dataset.pos_dim        
-        num_channels = self.train_dataset.num_channels
-        sample_size = self.train_dataset.resolution
-        latent_channels = 8
-                
+        self.pos_dim = self.train_dataset.pos_dim        
+        self.num_channels = self.train_dataset.num_channels
+        self.sample_size = self.train_dataset.resolution
+        self.latent_channels = 8
+        self.block_dims = args.block_dims
+                 
         # Load pretrained surface vae (fast encode version)
         surf_vae_encoder = AutoencoderKLFastEncode(
-            in_channels=num_channels,
-            out_channels=num_channels,
-            down_block_types=['DownEncoderBlock2D']*len(args.block_dims),
-            up_block_types= ['UpDecoderBlock2D']*len(args.block_dims),
-            block_out_channels=args.block_dims,
+            in_channels=self.num_channels,
+            out_channels=self.num_channels,
+            down_block_types=['DownEncoderBlock2D']*len(self.block_dims),
+            up_block_types= ['UpDecoderBlock2D']*len(self.block_dims),
+            block_out_channels=self.block_dims,
             layers_per_block=2,
             act_fn='silu',
-            latent_channels=latent_channels,
+            latent_channels=self.latent_channels,
             norm_num_groups=8,
-            sample_size=sample_size,
+            sample_size=self.sample_size,
         )
         
         surf_vae_encoder.load_state_dict(torch.load(args.surfvae), strict=False)
-        
-        print('[INFO] Devices: ', torch.cuda.is_available(), torch.cuda.device_count())
-        surf_vae_encoder = nn.DataParallel(surf_vae_encoder, device_ids=args.gpu) # distributed inference 
+        surf_vae_encoder = nn.DataParallel(surf_vae_encoder) # distributed inference 
         self.surf_vae_encoder = surf_vae_encoder.to(self.device).eval()
         
         print('[DONE] Init parallel surface vae encoder.')
@@ -383,30 +395,21 @@ class SurfZTrainer():
         train_dataset.init_encoder(self.surf_vae_encoder, self.z_scaled)
         val_dataset.init_encoder(self.surf_vae_encoder, train_dataset.z_scale)
         if self.z_scaled is None: self.z_scaled = train_dataset.z_scale
-                
-        # surf_vae_decoder = AutoencoderKLFastDecode(
-        #     in_channels=num_channels,
-        #     out_channels=num_channels,
-        #     down_block_types=['DownEncoderBlock2D']*len(args.block_dims),
-        #     up_block_types= ['UpDecoderBlock2D']*len(args.block_dims),
-        #     block_out_channels=args.block_dims,
-        #     layers_per_block=2,
-        #     act_fn='silu',
-        #     latent_channels=latent_channels,
-        #     norm_num_groups=8,
-        #     sample_size=sample_size,
-        # )
-        # surf_vae_decoder.load_state_dict(torch.load(args.surfvae), strict=False)
-        # surf_vae_decoder = nn.DataParallel(surf_vae_decoder) # distributed inference
-        # self.surf_vae_decoder = surf_vae_decoder.to(self.device).eval()
-                
+               
         # Initialize network
         model = SurfZNet(
-            p_dim=pos_dim*2,
-            z_dim=(sample_size//(2**(len(args.block_dims)-1)))**2 * latent_channels,
+            p_dim=self.pos_dim*2,
+            z_dim=(self.sample_size//(2**(len(args.block_dims)-1)))**2 * self.latent_channels,
             num_heads=12,
             num_cf=train_dataset.num_classes
             )
+        
+        if args.finetune:
+            state_dict = torch.load(args.weight)
+            if 'model_state_dict' in state_dict: model.load_state_dict(state_dict['model_state_dict'])
+            elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
+            else: model.load_state_dict(state_dict)
+            print('Continue training from %s.'%(args.weight))
         
         model = nn.DataParallel(model) # distributed training 
         self.model = model.to(self.device).train()
@@ -476,11 +479,11 @@ class SurfZTrainer():
                 bsz = len(surfPos)
                 
                 # Augment the surface position (see https://arxiv.org/abs/2106.15282)
-                if torch.rand(1) > 0.3:
-                    aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
-                    aug_noise = torch.randn(surfPos.shape).to(self.device)
-                    surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
-                
+                # if torch.rand(1) > 0.3:
+                aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
+                aug_noise = torch.randn(surfPos.shape).to(self.device)
+                surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
+            
                 surfZ = surfZ * self.z_scaled
                 self.optimizer.zero_grad() # zero gradient
 
@@ -504,10 +507,10 @@ class SurfZTrainer():
             # logging
             if self.iters % 10 == 0:
                 wandb.log({
-                    "Loss-noise": total_loss, "SurfZ-min": surfZ.min(), 
-                    "SurfZ-max": surfZ.max(), "SurfZ-std": surfZ.std(), 
-                    "surf_mask_min": surf_mask.sum(dim=1).min(), "surf_mask_max": surf_mask.sum(dim=1).max(), 
-                    "surfZ_pred-min": surfZ_pred.min(), 'surfZ_pred-max': surfZ_pred.max()
+                    "loss-noise": total_loss, "surfz-min": surfZ[~surf_mask].min(), 
+                    "surfz-max": surfZ[~surf_mask].max(), "surfz-std": surfZ[~surf_mask].std(), 
+                    "surf_mask-min": surf_mask.sum(dim=1).min(), "surf_mask-max": surf_mask.sum(dim=1).max(), 
+                    "surfZ_pred-min": surfZ_pred[~surf_mask].min(), 'surfz_pred-max': surfZ_pred[~surf_mask].max()
                     }, step=self.iters)
 
             self.iters += 1
@@ -515,7 +518,7 @@ class SurfZTrainer():
 
         progress_bar.close()
         # update train dataset
-        if len(self.train_dataset.data_chunks) > 1:
+        if hasattr(self.train_dataset, 'data_chunks') and len(self.train_dataset.data_chunks) > 1:
             print('Updating train data chunks...')
             self.train_dataset.update()        
             self.train_dataloader = torch.utils.data.DataLoader(
@@ -537,7 +540,8 @@ class SurfZTrainer():
         progress_bar = tqdm(total=len(self.val_dataloader))
         progress_bar.set_description(f"Testing")
 
-        total_loss = [0]*6
+        val_timesteps = [10,50,100,200,500,1000]
+        total_loss = [0]*len(val_timesteps)
 
         vis_batch = torch.randint(0, len(self.val_dataloader), (1,)).item()        
         for batch_idx, data in enumerate(self.val_dataloader):
@@ -552,18 +556,13 @@ class SurfZTrainer():
 
             total_count += len(surfPos)
             
-            for idx, step in enumerate([10,50,100,200,500,1000]):
+            for idx, step in enumerate(val_timesteps):
                 # Evaluate at timestep 
                 timesteps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
                 noise = torch.randn(tokens.shape).to(self.device)  
                 diffused = self.noise_scheduler.add_noise(tokens, noise, timesteps)
                 
-                with torch.no_grad():
-                    pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls)
-                    
-                    # if batch_idx == vis_batch and step == 1000: 
-                    #     sample_idx = torch.randint(0, bsz, (1,))
-                    #     self.vis_pred(surfPos[sample_idx, ...], pred[sample_idx, ...], surf_mask[sample_idx, ...])
+                with torch.no_grad(): pred = self.model(diffused, timesteps, surfPos, surf_mask, surf_cls)
                     
                 loss = mse_loss(pred[~surf_mask], noise[~surf_mask]).mean(-1).sum().item()
                 total_loss[idx] += loss
@@ -573,9 +572,9 @@ class SurfZTrainer():
 
         mse = [loss/total_count for loss in total_loss]
         self.model.train() # set to train
-        wandb.log({"Val-010": mse[0], "Val-050": mse[1], "Val-100": mse[2], "Val-200": mse[3], "Val-500": mse[4], "Val-1000": mse[5]}, step=self.iters)
+        wandb.log(dict([(f"val-{step:04d}", mse[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
         
-        if len(self.val_dataset.data_chunks) > 1:
+        if hasattr(self.val_dataset, 'data_chunks') and len(self.val_dataset.data_chunks) > 1:
             self.val_dataset.update()
             self.val_dataloader = torch.utils.data.DataLoader(
                 self.val_dataset, shuffle=False, 
@@ -584,11 +583,13 @@ class SurfZTrainer():
     
 
     def save_model(self):
+        ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
+        os.makedirs(ckpt_log_dir, exist_ok=True)        
         torch.save(
             {
-                'model': self.model.module.state_dict(),
+                'model_state_dict': self.model.module.state_dict(),
                 'z_scale': self.z_scaled
             }, 
-            os.path.join(self.log_dir,'epoch_'+str(self.epoch)+'.pt'))
+            os.path.join(ckpt_log_dir, f'surfz_e{self.epoch:4d}.pt'))
         return
     

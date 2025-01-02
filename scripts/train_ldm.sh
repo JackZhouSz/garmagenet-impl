@@ -14,39 +14,14 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
     --batch_size 512 --max_face 32 --bbox_scaled 1.0 \
     --data_fields surf_bbox_wcs surf_uv_bbox_wcs caption
 
+
 ### StyleXD - SurfZ
-python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
+CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/epoch_1800.pt --gpu 0 1 \
-    --expr stylexd_surfz_xyzuv_pad_repeat --train_nepoch 10000 --test_nepoch 10 --save_nepoch 100 \
-    --batch_size 128 --chunksize 256 --padding repeat --z_scaled 1.8653 \
-    --block_dims 16 32 32 64 64 128 --max_face 32 --bbox_scaled 1.0 \
-    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
-
-
-python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
-    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/epoch_1800.pt --gpu 0 1 \
-    --expr stylexd_surfz_xyzuv_pad_zero_max_face_36 --train_nepoch 50000 --test_nepoch 50 --save_nepoch 500 \
-    --batch_size 128 --chunksize -1 --padding zero \
-    --block_dims 16 32 32 64 64 128 --max_face 36 --bbox_scaled 1.0 \
-    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
-
-       
-python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
-    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/epoch_1800.pt --gpu 0 1 \
-    --expr stylexd_surfz_xyzuv_pad_zero --train_nepoch 50000 --test_nepoch 20 --save_nepoch 100 \
-    --batch_size 128 --chunksize -1 --padding zero \
-    --block_dims 16 32 32 64 64 128 --max_face 32 --bbox_scaled 1.0 \
-    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
-
-
-python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
-    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/epoch_1800.pt --gpu 0 1 \
-    --expr stylexd_surfz_xyzuv_debug_nan_pad_zero_encode_all --train_nepoch 50000 --test_nepoch 20 --save_nepoch 100 \
-    --batch_size 128 --chunksize 64 --padding zero --z_scaled 1.867 \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6/cache/epoch_1800 \
+    --expr stylexd_surfz_xyzuv_zero_sample --train_nepoch 50000 --test_nepoch 50 --save_nepoch 500 \
+    --batch_size 384 --chunksize -1 --padding zero --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 128 --max_face 32 --bbox_scaled 1.0 \
     --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
 

@@ -16,6 +16,7 @@ def get_args_ldm():
                         help='Path to data folder')  
     parser.add_argument('--list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
                         help='Path to data list')  
+    parser.add_argument('--cache_dir', type=str, default=None, help='Path to cached data (with latents).')
     parser.add_argument('--surfvae', type=str, default='log/deepcad_surfvae/epoch_400.pt', 
                         help='Path to pretrained surface vae weights')  
     parser.add_argument("--option", type=str, choices=['surfpos', 'surfz'], default='surfpos', 
@@ -39,7 +40,7 @@ def get_args_ldm():
     parser.add_argument('--z_scaled', type=float, default=None, help='scaled the latent z')
     parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation.')
     parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
-    parser.add_argument("--padding", default="zero", type=str, choices=['repeat', 'zero'])
+    parser.add_argument("--padding", default="zero", type=str, choices=['repeat', 'zero', 'zerolatent'])
 
     # Model parameters
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5'], help="Text encoder when applying text as generation condition.")
@@ -67,11 +68,9 @@ def run(args):
 
     elif args.option == 'surfz':
         train_dataset = SurfZData(
-            args.data, args.list, validate=False, aug=args.data_aug, 
-            pad_mode=args.padding, args=args)
+            args.data, args.list, validate=False, aug=args.data_aug, args=args)
         val_dataset = SurfZData(
-            args.data, args.list, validate=True, aug=False, 
-            pad_mode=args.padding, args=args)
+            args.data, args.list, validate=True, aug=False, args=args)
         ldm = SurfZTrainer(args, train_dataset, val_dataset)
         
 
@@ -102,8 +101,8 @@ if __name__ == "__main__":
     # Parse input augments
     args = get_args_ldm()
 
-    # # Set PyTorch to use only the specified GPU
-    os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
+    # # # Set PyTorch to use only the specified GPU
+    # os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 
     # Make project directory if not exist
     if not os.path.exists(args.log_dir): os.makedirs(args.log_dir)

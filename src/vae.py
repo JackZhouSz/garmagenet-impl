@@ -84,7 +84,7 @@ if __name__ == "__main__":
     args = get_args_vae()
     
     # Set PyTorch to use only the specified GPU
-    os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
+    # os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
     
     # Make project directory if not exist
     if not os.path.exists(args.log_dir):

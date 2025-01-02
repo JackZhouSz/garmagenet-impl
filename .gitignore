@@ -2,6 +2,8 @@ resources
 log
 checkpoints
 results
+generated
+thirdparty
 
 *.pkl
 *.pt
