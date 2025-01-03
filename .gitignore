@@ -1,10 +1,9 @@
-resources
-log
-checkpoints
-results
-generated
-thirdparty
-generated
+resources/
+log/
+checkpoints/
+results/
+thirdparty/
+generated/
 
 *.pkl
 *.pt

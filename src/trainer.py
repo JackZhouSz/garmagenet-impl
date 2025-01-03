@@ -1,6 +1,7 @@
 import os
 import wandb
 from tqdm import tqdm
+from glob import glob
 
 import torch
 import torch.nn as nn 
@@ -8,12 +9,12 @@ from torchvision.utils import make_grid
 import torchvision.transforms.functional as F
 from diffusers import AutoencoderKL, DDPMScheduler
 from network import *
+from utils import get_wandb_logging_meta
 
 # visualization utils
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
-
 
 class SurfVAETrainer():
     """ Surface VAE Trainer """
@@ -33,6 +34,7 @@ class SurfVAETrainer():
         
         num_channels = train_dataset.num_channels
         sample_size = train_dataset.resolution
+        latent_channels = args.latent_channels
 
         model = AutoencoderKL(
             in_channels=num_channels,
@@ -42,14 +44,17 @@ class SurfVAETrainer():
             block_out_channels=args.block_dims,
             layers_per_block=2,
             act_fn='silu',
-            latent_channels=8,
+            latent_channels=latent_channels,
             norm_num_groups=8,
             sample_size=sample_size,
         )
-
-        # Load pretrained surface vae (fast encode version)
+            
         if args.finetune:
-            model.load_state_dict(torch.load(args.weight))
+            state_dict = torch.load(args.weight)
+            if 'model_state_dict' in state_dict: model.load_state_dict(state_dict['model_state_dict'])
+            elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
+            else: model.load_state_dict(state_dict)
+            print('Load SurfZNet checkpoint from %s.'%(args.weight))
             
         self.model = model.to(self.device).train()
 
@@ -63,7 +68,9 @@ class SurfVAETrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
+        run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr, id=run_id, resume='allow')
+        self.iters = run_step
 
         # Initilizer dataloader
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, 
@@ -201,6 +208,14 @@ class SurfPosTrainer():
 
         # Initialize network
         model = SurfPosNet(self.use_cf)
+        
+        if args.finetune:
+            state_dict = torch.load(args.weight)
+            if 'model_state_dict' in state_dict: model.load_state_dict(state_dict['model_state_dict'])
+            elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
+            else: model.load_state_dict(state_dict)
+            print('Load SurfZNet checkpoint from %s.'%(args.weight))
+        
         model = nn.DataParallel(model) # distributed training 
         self.model = model.to(self.device).train()
 
@@ -230,7 +245,9 @@ class SurfPosTrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='GarmentGen', dir=self.log_dir, name=args.expr)
+        run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr, id=run_id, resume='allow')
+        self.iters = run_step
 
         # Initialize dataloader
         self.train_dataloader = torch.utils.data.DataLoader(
@@ -372,7 +389,7 @@ class SurfZTrainer():
         self.pos_dim = self.train_dataset.pos_dim        
         self.num_channels = self.train_dataset.num_channels
         self.sample_size = self.train_dataset.resolution
-        self.latent_channels = 8
+        self.latent_channels = args.latent_channels
         self.block_dims = args.block_dims
                  
         # Load pretrained surface vae (fast encode version)
@@ -412,13 +429,11 @@ class SurfZTrainer():
             if 'model_state_dict' in state_dict: model.load_state_dict(state_dict['model_state_dict'])
             elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
             else: model.load_state_dict(state_dict)
-            print('Continue training from %s.'%(args.weight))
+            print('Load SurfZNet checkpoint from %s.'%(args.weight))
         
         model = nn.DataParallel(model) # distributed training 
         self.model = model.to(self.device).train()
-        
-        if args.finetune: model.load_state_dict(torch.load(args.weight))
-        
+                
         self.device = self.model.module.parameters().__next__().device
 
         self.loss_fn = nn.MSELoss()
@@ -447,7 +462,9 @@ class SurfZTrainer():
         self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
-        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr)
+        run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
+        wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr, id=run_id, resume='allow')
+        self.iters = run_step
 
         # Initilizer dataloader
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, 

@@ -7,9 +7,7 @@ from datasets.sxd import SurfData
 
 
 def get_args_vae():    
-    
-    def _str2intlist(s): return list(map(int, s.split(',')))
-    
+        
     parser = argparse.ArgumentParser()
 
     # Dataset configuration
@@ -24,8 +22,9 @@ def get_args_vae():
     parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
 
     # Model parameters
-    parser.add_argument('--block_dims', type=_str2intlist, default="32,64,64,128", help='Latent dimension of each block of the UNet model.')
-    
+    parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
+    parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
+
     # Training parameters
     parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
     parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')  

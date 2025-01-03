@@ -22,10 +22,11 @@ CUDA_VISIBLE_DEVICES=0 python src/vae.py --data /data/AIGP/brep_reso_256_edge_sn
     --train_list data_process/stylexd_data_split_reso_256.pkl \
     --val_list data_process/stylexd_data_split_reso_256.pkl \
     --expr stylexd_vae_surf_256_xyz_uv_mask_unet6_cont \
-    --batch_size 64 --block_dims 16,32,32,64,64,128 \
+    --batch_size 64 --block_dims 16 32 32 64 64 128 \
     --test_nepoch 50 --save_nepoch 100 --train_nepoch 8000 \
     --data_fields surf_ncs surf_uv_ncs surf_mask --chunksize 256 \
     --finetune --weight log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt
+
 
 ### DeepCAD VAE Training ###
 python src/vae.py --data data_process/deepcad_parsed \

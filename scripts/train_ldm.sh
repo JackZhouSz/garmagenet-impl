@@ -27,6 +27,17 @@ CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_sn
     --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
 
 
+CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6/cache/epoch_1800/encoder_mode \
+    --expr stylexd_surfz_xyzuv_pad_zero_z_scale_1.0 --train_nepoch 50000 --test_nepoch 50 --save_nepoch 500 \
+    --batch_size 1024 --chunksize -1 --padding zero --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --max_face 32 --bbox_scaled 1.0 \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs \
+    --finetune --weight log/stylexd_surfz_xyzuv_pad_zero_z_scale_1.0/ckpts/surfz_e7000.pt
+
+
 ### Training DeepCAD Latent Diffusion Model ###  
 python src/ldm.py --data data_process/deepcad_parsed \
     --list data_process/deepcad_data_split_6bit.pkl --option surfpos --gpu 0 1 \

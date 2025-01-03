@@ -1,3 +1,8 @@
+import os
+
+import json
+from glob import glob
+
 import numpy as np 
 import math
 import torch
@@ -19,6 +24,9 @@ from OCC.Core.gp import gp_Pnt
 from OCC.Core.ShapeFix import ShapeFix_Face, ShapeFix_Wire, ShapeFix_Edge
 from OCC.Core.ShapeAnalysis import ShapeAnalysis_Wire
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Sewing, BRepBuilderAPI_MakeSolid
+
+
+
 
 
 def generate_random_string(length):
@@ -904,3 +912,23 @@ def construct_brep(surf_wcs, edge_wcs, FaceEdgeAdj, EdgeVertexAdj):
     solid = maker.Solid()
 
     return solid
+
+def get_wandb_logging_meta(wandb_logging_dir):
+    """
+    Get the meta data for wandb logging
+    """
+    
+    if not os.path.exists(wandb_logging_dir): return "", 0
+    latest_run_dir = os.path.join(wandb_logging_dir, 'latest-run')
+    latest_run_dir = latest_run_dir if os.path.exists(latest_run_dir) \
+        else sorted(glob(os.path.join(wandb_logging_dir, 'run-*')))[-1]
+    
+    run_id = os.path.basename(glob(os.path.join(latest_run_dir, 'run-*.wandb'))[0]).split('.')[0].split('-')[-1]
+    
+    summary_fp = os.path.join(latest_run_dir, 'files', 'wandb-summary.json')
+    with open(summary_fp, 'r') as f: summary_meta = json.load(f)
+    run_step = summary_meta['_step']
+    
+    print('Resumming wandb logging from %s. RUN_ID: %s RUN_STEP: %d.'%(latest_run_dir, run_id, run_step))
+    
+    return run_id, run_step

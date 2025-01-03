@@ -45,7 +45,8 @@ def get_args_ldm():
     # Model parameters
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5'], help="Text encoder when applying text as generation condition.")
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
-    
+    parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
+
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
