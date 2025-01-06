@@ -17,25 +17,37 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
 
 
 ### StyleXD - SurfZ
-CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+CUDA_VISIBLE_DEVICES=0,1 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
     --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt \
     --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6/cache/epoch_1800 \
-    --expr stylexd_surfz_xyzuv_zero_sample --train_nepoch 50000 --test_nepoch 50 --save_nepoch 500 \
-    --batch_size 384 --chunksize -1 --padding zero --z_scaled 1.0 \
-    --block_dims 16 32 32 64 64 128 --max_face 32 --bbox_scaled 1.0 \
-    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
+    --expr stylexd_surfz_xyzuv_pad_zero_z_scale_1.0 --train_nepoch 500000 --test_nepoch 500 --save_nepoch 1000 \
+    --batch_size 3072 --chunksize -1 --padding zero --z_scaled 1.0 --bbox_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --max_face 32 --sample_mode mode \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs \
+    --finetune --weight log/stylexd_surfz_xyzuv_pad_zero_z_scale_1.0/ckpts/surfz_e50000.pt
+    
+
+
+CUDA_VISIBLE_DEVICES=1 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
+    --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e300.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e300/encoder_sample \
+    --expr stylexd_surfz_xyzuv_latent1_sample --train_nepoch 50000 --test_nepoch 50 --save_nepoch 500 \
+    --batch_size 1024 --chunksize -1 --padding zerolatent --bbox_scaled 1.0 --z_scaled  \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode sample \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs \
+
 
 
 CUDA_VISIBLE_DEVICES=0 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt \
-    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6/cache/epoch_1800/encoder_mode \
-    --expr stylexd_surfz_xyzuv_pad_zero_z_scale_1.0 --train_nepoch 50000 --test_nepoch 50 --save_nepoch 500 \
-    --batch_size 1024 --chunksize -1 --padding zero --z_scaled 1.0 \
-    --block_dims 16 32 32 64 64 128 --max_face 32 --bbox_scaled 1.0 \
-    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs \
-    --finetune --weight log/stylexd_surfz_xyzuv_pad_zero_z_scale_1.0/ckpts/surfz_e7000.pt
+    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e300.pt \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e300/encoder_mode \
+    --expr stylexd_surfz_xyzuv_latent1_mode --train_nepoch 50000 --test_nepoch 50 --save_nepoch 500 \
+    --batch_size 256 --chunksize -1 --padding zerolatent --bbox_scaled 3.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs 
 
 
 ### Training DeepCAD Latent Diffusion Model ###  

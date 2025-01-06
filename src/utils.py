@@ -916,12 +916,15 @@ def construct_brep(surf_wcs, edge_wcs, FaceEdgeAdj, EdgeVertexAdj):
 def get_wandb_logging_meta(wandb_logging_dir):
     """
     Get the meta data for wandb logging
-    """
+    """   
     
-    if not os.path.exists(wandb_logging_dir): return "", 0
+    if not os.path.exists(wandb_logging_dir): return None, 0
+    
     latest_run_dir = os.path.join(wandb_logging_dir, 'latest-run')
-    latest_run_dir = latest_run_dir if os.path.exists(latest_run_dir) \
-        else sorted(glob(os.path.join(wandb_logging_dir, 'run-*')))[-1]
+    if not os.path.exists(latest_run_dir):
+        all_runs = sorted(glob(os.path.join(wandb_logging_dir, 'run-*')))
+        if len(all_runs) < 1: return None, 0
+        else: latest_run_dir = all_runs[-1]
     
     run_id = os.path.basename(glob(os.path.join(latest_run_dir, 'run-*.wandb'))[0]).split('.')[0].split('-')[-1]
     

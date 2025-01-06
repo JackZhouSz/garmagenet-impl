@@ -931,6 +931,7 @@ class AutoencoderKLFastEncode(ModelMixin, ConfigMixin):
         sample_size: int = 32,
         scaling_factor: float = 0.18215,
         force_upcast: float = True,
+        sample_mode: str = "sample"
     ):
         super().__init__()
 
@@ -947,6 +948,7 @@ class AutoencoderKLFastEncode(ModelMixin, ConfigMixin):
         )
 
         self.quant_conv = nn.Conv2d(2 * latent_channels, 2 * latent_channels, 1)
+        self.sample_mode = sample_mode
 
     def forward(
         self, x: torch.FloatTensor, return_dict: bool = True
@@ -965,7 +967,12 @@ class AutoencoderKLFastEncode(ModelMixin, ConfigMixin):
         """
         h = self.encoder(x)
         moments = self.quant_conv(h)
-        latent_z = DiagonalGaussianDistribution(moments).sample()  # mode converge faster
+        if self.sample_mode == "sample":
+            latent_z = DiagonalGaussianDistribution(moments).sample()
+        elif self.sample_mode == "mode":    
+            latent_z = DiagonalGaussianDistribution(moments).mode()  # mode converge faster
+        else:
+            raise ValueError(f"Invalid sample mode: {self.sample_mode}")
         return latent_z
 
 

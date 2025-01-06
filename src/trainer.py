@@ -28,6 +28,8 @@ class SurfVAETrainer():
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.batch_size = args.batch_size
+        
+        self.data_fields = args.data_fields
 
         assert train_dataset.num_channels == val_dataset.num_channels, \
             'Expecting same dimensions for train and val dataset, got %d (train) and %d (val).'%(train_dataset.num_channels, val_dataset.num_channels)
@@ -167,11 +169,13 @@ class SurfVAETrainer():
                 if val_images is None and dec.shape[0] > 16:
                     sample_idx = torch.randperm(dec.shape[0])[:16]
                     val_images = make_grid(dec[sample_idx, ...], nrow=8, normalize=True, value_range=(-1,1))
-                    geo_images = wandb.Image(val_images[:3, ...], caption="Geometry output.")
-                    uv_images = wandb.Image(val_images[-3:, ...], caption="UV output.")
-                    mask_image = wandb.Image(val_images[-1:, ...], caption="Mask output.")
-                    wandb.log({"Val-Geo": geo_images, "Val-UV": uv_images, "Val-Mask": mask_image}, step=self.iters)
-                
+                    
+                    vis_log = {}
+                    if 'surf_ncs' in self.data_fields: vis_log['Val-Geo'] = wandb.Image(val_images[:3, ...], caption="Geometry output.")
+                    if 'surf_uv_ncs' in self.data_fields: vis_log['Val-UV'] = wandb.Image(val_images[-3:, ...], caption="UV output.")
+                    if 'surf_mask' in self.data_fields: vis_log['Val-Mask'] = wandb.Image(val_images[-1:, ...], caption="Mask output.")                        
+                    wandb.log(vis_log, step=self.iters)
+    
         mse = total_loss/total_count
         self.model.train() # set to train
         wandb.log({"Val-mse": mse}, step=self.iters)
@@ -190,7 +194,7 @@ class SurfVAETrainer():
         os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save(
             self.model.state_dict(), 
-            os.path.join(ckpt_log_dir, f'vae_e{self.epoch:4d}.pt'))
+            os.path.join(ckpt_log_dir, f'vae_e{self.epoch:04d}.pt'))
         return
     
     
@@ -366,7 +370,7 @@ class SurfPosTrainer():
         torch.save({
             'model_state_dict': self.model.module.state_dict(),
             'bbox_scale': self.train_dataset.bbox_scaled
-        }, os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:4d}.pt'))
+        }, os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:04d}.pt'))
         return
 
 
@@ -611,6 +615,6 @@ class SurfZTrainer():
                 'model_state_dict': self.model.module.state_dict(),
                 'z_scale': self.z_scaled
             }, 
-            os.path.join(ckpt_log_dir, f'surfz_e{self.epoch:4d}.pt'))
+            os.path.join(ckpt_log_dir, f'surfz_e{self.epoch:04d}.pt'))
         return
     
