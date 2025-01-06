@@ -20,7 +20,7 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap \
 CUDA_VISIBLE_DEVICES=0,1 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption \
     --list data_process/stylexd_data_split_reso_256.pkl --option surfz \
     --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6/ckpts/epoch_1800.pt \
-    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6/cache/epoch_1800 \
+    --cache_dir log/stylexd_vae_surf_256_xyz_uv_mask_unet6/cache/epoch_1800/encoder_mode \
     --expr stylexd_surfz_xyzuv_pad_zero_z_scale_1.0 --train_nepoch 500000 --test_nepoch 500 --save_nepoch 1000 \
     --batch_size 3072 --chunksize -1 --padding zero --z_scaled 1.0 --bbox_scaled 1.0 \
     --block_dims 16 32 32 64 64 128 --max_face 32 --sample_mode mode \
