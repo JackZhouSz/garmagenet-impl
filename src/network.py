@@ -4,6 +4,7 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
+import transformers
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.utils import BaseOutput, is_torch_version
 from diffusers.utils.accelerate_utils import apply_forward_hook
@@ -1068,7 +1069,7 @@ class AutoencoderKLFastDecode(ModelMixin, ConfigMixin):
 
         """
         decoded = self._decode(z).sample
-        return decoded
+        return decoded    
 
 
 class SurfPosNet(nn.Module):
@@ -1076,15 +1077,17 @@ class SurfPosNet(nn.Module):
     Transformer-based latent diffusion model for surface position
     """
 
-    def __init__(self, p_dim=6, embed_dim=768, num_cf=-1):
+    def __init__(self, p_dim=6, embed_dim=768, condition_dim=-1, num_cf=-1):
         super(SurfPosNet, self).__init__()
         
         self.p_dim = p_dim
         self.embed_dim = embed_dim
+        self.condition_dim = condition_dim
         self.use_cf = num_cf > 0
 
         layer = nn.TransformerEncoderLayer(d_model=self.embed_dim, nhead=12, norm_first=True,
                                                    dim_feedforward=1024, dropout=0.1)
+        
         self.net = nn.TransformerEncoder(layer, 12, nn.LayerNorm(self.embed_dim))
 
         self.p_embed = nn.Sequential(
@@ -1100,7 +1103,11 @@ class SurfPosNet(nn.Module):
             nn.SiLU(),
             nn.Linear(self.embed_dim, self.embed_dim),
         )
-
+        
+        print('*** num_cf: ', num_cf)
+        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
+        if self.condition_dim > 0: self.cond_embed = nn.Linear(self.condition_dim, self.embed_dim, bias=False)
+        
         self.fc_out = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
@@ -1108,28 +1115,34 @@ class SurfPosNet(nn.Module):
             nn.Linear(self.embed_dim, self.p_dim),
         )
 
-        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
-
         return
 
        
-    def forward(self, surfPos, timesteps, class_label, is_train=False):
+    def forward(self, surfPos, timesteps, class_label=None, condition=None, is_train=False):
         """ forward pass """
+        bsz, seq_len, _ = surfPos.shape
+
+        
         bsz = timesteps.size(0)
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
         p_embeds = self.p_embed(surfPos)
-    
-        if self.use_cf:  # classifier-free
+        
+        tokens = p_embeds + time_embeds
+                    
+        if self.use_cf and class_label is not None:  # classifier-free
             if is_train:
-                # randomly set 10% to uncond label
-                uncond_mask = torch.rand(bsz,1) <= 0.1  
+                uncond_mask = torch.rand(bsz, seq_len, 1) <= 0.1  
                 class_label[uncond_mask] = 0
-            c_embeds = self.class_embed(class_label) 
-            tokens = p_embeds + time_embeds + c_embeds
-        else:
-            tokens = p_embeds + time_embeds
+            c_embeds = self.class_embed(class_label.squeeze(-1)) 
+            tokens += c_embeds            
+            
+        if self.condition_dim > 0 and condition is not None:
+            cond_token = self.cond_embed(condition)
+            if len(cond_token.shape) == 2: tokens = tokens + cond_token[:, None]
+            else: tokens = torch.cat([tokens, cond_embeds], dim=1)
        
-        output = self.net(src=tokens.permute(1,0,2)).transpose(0,1)
+        output = self.net(src=tokens.permute(1,0,2))
+        output = output[:seq_len].transpose(0,1)
         pred = self.fc_out(output)
 
         return pred
@@ -1221,9 +1234,7 @@ class SurfZNet(nn.Module):
         
         # print('[SurfZNet] token', tokens.size(), tokens.min(), tokens.max())
         # print('[SurfZNet] mask', surf_mask.size(), surf_mask.sum(dim=1).min(), surf_mask.sum(dim=1).max())
-        # print('[SurfZNet] output', output.size(), output.min(), output.max())
+        print('[SurfZNet] output', output.size(), output.min(), output.max())
         
         pred = self.fc_out(output)
         return pred
-    
-

@@ -3,6 +3,8 @@ import wandb
 from tqdm import tqdm
 from glob import glob
 
+from typing import Any, Callable, Dict, List, Optional, Union
+
 import torch
 import torch.nn as nn 
 from torchvision.utils import make_grid
@@ -205,16 +207,23 @@ class SurfPosTrainer():
         self.iters = 0
         self.epoch = 0
         self.log_dir = args.log_dir
-        self.use_cf = args.use_cf
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.bbox_scaled = args.bbox_scaled
 
-        self.bbox_scaled = train_dataset.bbox_scaled
+        # Initialize text encoder
+        if args.text_encoder is not None: self.build_encoder(args.text_encoder)
 
         # Initialize network
-        model = SurfPosNet(self.use_cf)
+        self.pos_dim = train_dataset.pos_dim
+        model = SurfPosNet(
+            p_dim=self.pos_dim*2, 
+            condition_dim=self.text_emb_dim if hasattr(self, 'text_emb_dim') else -1,
+            num_cf=train_dataset.num_classes)
         
         if args.finetune:
             state_dict = torch.load(args.weight)
+            if 'bbox_scaled' in state_dict:
+                self.bbox_scaled = train_dataset.bbox_scaled = val_dataset.bbox_scaled = state_dict['bbox_scaled']
             if 'model_state_dict' in state_dict: model.load_state_dict(state_dict['model_state_dict'])
             elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
             else: model.load_state_dict(state_dict)
@@ -248,7 +257,7 @@ class SurfPosTrainer():
 
         self.scaler = torch.cuda.amp.GradScaler()
 
-        # Initialize wandb
+        # # Initialize wandb
         run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
         wandb.init(project='GarmentGen', dir=args.log_dir, name=args.expr, id=run_id, resume='allow')
         self.iters = run_step
@@ -260,6 +269,113 @@ class SurfPosTrainer():
             val_dataset, shuffle=False, batch_size=args.batch_size, num_workers=16)
         
         return
+    
+    def _get_gme_text_embeds(
+        self,
+        prompt: Union[str, List[str]] = None,
+        max_sequence_length: int = 310
+    ):        
+        assert hasattr(self, 'gme'), "Must initialize GME model before use."
+                
+        prompt_embeds = self.gme.get_text_embeddings(texts=prompt)
+                
+        return prompt_embeds
+        
+    
+    def _get_t5_text_embeds(
+        self,
+        prompt: Union[str, List[str]] = None,
+        max_sequence_length: int = 16
+    ):
+        if not prompt or not prompt[0]: return None
+        if not hasattr(self, 'tokenizer'): return None
+        if not hasattr(self, 'text_encoder'): return None
+                
+        prompt = [prompt] if isinstance(prompt, str) else prompt
+        batch_size = len(prompt)
+
+        with torch.no_grad():
+            text_inputs = self.tokenizer(
+                prompt,
+                padding="max_length",
+                max_length=max_sequence_length,
+                truncation=True,
+                return_length=False,
+                return_overflowing_tokens=False,
+                return_tensors="pt",
+            )
+            
+            text_input_ids = text_inputs.input_ids
+            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=True).last_hidden_state[0]
+            _, seq_len, _ = prompt_embeds.shape
+
+        return prompt_embeds
+    
+    
+    def _get_clip_text_embeds(
+        self,
+        prompt: Union[str, List[str]],
+        max_sequence_length: int = 16
+    ):
+
+        with torch.no_grad():
+            prompt = [prompt] if isinstance(prompt, str) else prompt
+            batch_size = len(prompt)
+
+            text_inputs = self.tokenizer(
+                prompt,
+                padding="max_length",
+                max_length=max_sequence_length,
+                truncation=True,
+                return_overflowing_tokens=False,
+                return_length=False,
+                return_tensors="pt",
+            )
+
+            text_input_ids = text_inputs.input_ids
+            untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
+            if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
+                removed_text = self.tokenizer.batch_decode(untruncated_ids[:, max_sequence_length - 1 : -1])
+            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=False)
+
+            # Use pooled output of CLIPTextModel
+            prompt_embeds = prompt_embeds.pooler_output
+            prompt_embeds = prompt_embeds.to(self.device)
+            
+            # print("*** CLIP prompt_embeds: ", prompt_embeds.shape, prompt_embeds.min(), prompt_embeds.max())
+
+        return prompt_embeds
+    
+
+    def build_encoder(self, encoder='T5'):
+        if encoder == 'T5':
+            import transformers
+            self.tokenizer = transformers.T5TokenizerFast.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer_2')
+            text_encoder = transformers.T5EncoderModel.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder_2')
+            self.text_encoder = nn.DataParallel(text_encoder).to(self.device).eval()
+            self.text_emb_dim = 4096
+            self.text_embedder_fn = self._get_t5_text_embeds
+        elif encoder == 'CLIP':
+            import transformers
+            self.tokenizer = transformers.CLIPTokenizer.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='tokenizer')
+            text_encoder = transformers.CLIPTextModel.from_pretrained(
+                "/data/ch/models/FLUX.1-dev", subfolder='text_encoder')
+            self.text_encoder = nn.DataParallel(text_encoder).to(self.device).eval()
+            self.text_emb_dim = 768
+            self.text_embedder_fn = self._get_clip_text_embeds
+        elif encoder == 'GME':
+            from gme_inference import GmeQwen2VL
+            self.text_embedder_fn = self._get_gme_text_embeds
+            self.gme = GmeQwen2VL(model_path='/data/lry/models/gme-Qwen2-VL-2B-Instruct', max_length=32)
+            self.text_emb_dim = 1536
+        else:
+            raise ValueError(f'Unsupported encoder {encoder}.')
+        
+        # Test encoding text
+        print(f"[DONE] Init {encoder} text encoder.")
     
     
     def train_one_epoch(self):
@@ -275,20 +391,13 @@ class SurfPosTrainer():
         for data in self.train_dataloader:
             with torch.cuda.amp.autocast():
                 
-                surfPos, class_label, caption = data
+                surfPos, pad_mask, class_label, caption = data
+                                
                 surfPos = surfPos.to(self.device)
-                if class_label is not None: class_label = class_label.to(self.device)
-                if caption is not None: pass
+                class_label = class_label.to(self.device)                
                 
-                
-                # if self.use_cf:
-                #     data_cuda = [dat.to(self.device) for dat in data] # map to gpu
-                #     surfPos, class_label = data_cuda 
-                # else:
-                #     surfPos = data.to(self.device)
-                #     class_label = None
-
-                print('*** surfPos: ', surfPos.shape)
+                text_emb = self.text_embedder_fn(caption) if \
+                    caption and hasattr(self, 'text_embedder_fn') else None
 
                 bsz = len(surfPos)
                 
@@ -300,7 +409,7 @@ class SurfPosTrainer():
                 surfPos_diffused = self.noise_scheduler.add_noise(surfPos, surfPos_noise, timesteps)
 
                 # Predict noise
-                surfPos_pred = self.model(surfPos_diffused, timesteps, class_label, True)
+                surfPos_pred = self.model(surfPos_diffused, timesteps, class_label, text_emb, True)
               
                 # Compute loss
                 total_loss = self.loss_fn(surfPos_pred, surfPos_noise)
@@ -312,8 +421,7 @@ class SurfPosTrainer():
                 self.scaler.update()
 
             # logging
-            if self.iters % 10 == 0:
-                wandb.log({"Loss-noise": total_loss}, step=self.iters)
+            if self.iters % 10 == 0: wandb.log({"loss-noise": total_loss}, step=self.iters)
 
             self.iters += 1
             progress_bar.update(1)
@@ -333,33 +441,35 @@ class SurfPosTrainer():
         total_loss = [0,0,0,0,0]
 
         for data in self.val_dataloader:
-            if self.use_cf:
-                data_cuda = [dat.to(self.device) for dat in data] # map to gpu
-                surfPos, class_label = data_cuda 
-            else:
-                surfPos = data.to(self.device)  # (B, N, C)
-                class_label = None
-
+            surfPos, pad_mask, class_label, caption = data
+            surfPos = surfPos.to(self.device)
+            class_label = class_label.to(self.device) 
+            
+            text_emb = self.text_embedder_fn(caption) if \
+                caption and hasattr(self, 'text_embedder_fn') else None
             bsz = len(surfPos)
-        
             total_count += len(surfPos)
             
-
-            for idx, step in enumerate([10,50,100,200,500]):
+            val_timesteps = [10,50,100,200,500,1000]
+            total_loss = [0]*len(val_timesteps)
+            
+            vis_batch = torch.randint(0, len(self.val_dataloader), (1,)).item()   
+            for idx, step in enumerate(val_timesteps):
                 # Evaluate at timestep 
                 timesteps = torch.randint(step-1, step, (bsz,), device=self.device).long()  # [batch,]
                 surfPos_noise = torch.randn(surfPos.shape).to(self.device)  
                 surfPos_diffused = self.noise_scheduler.add_noise(surfPos, surfPos_noise, timesteps)
-                with torch.no_grad():
-                    surfPos_pred = self.model(surfPos_diffused, timesteps, class_label) 
-                loss = mse_loss(surfPos_pred, surfPos_noise).mean((1,2)).sum().item()
+                
+                with torch.no_grad(): pred = self.model(surfPos_diffused, timesteps, class_label, text_emb) 
+                
+                loss = mse_loss(pred, surfPos_noise).mean((1,2)).sum().item()
                 total_loss[idx] += loss
 
         mse = [loss/total_count for loss in total_loss]
         self.model.train() # set to train
-        wandb.log({
-            "Val-010": mse[0], "Val-050": mse[1], "Val-100": mse[2], 
-            "Val-200": mse[3], "Val-500": mse[4]}, step=self.iters)
+        wandb.log(
+            dict([(f"val-{step:04d}", mse[idx]) for idx, step in enumerate(val_timesteps)]), 
+            step=self.iters)
         
         return
     
@@ -369,7 +479,7 @@ class SurfPosTrainer():
         os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save({
             'model_state_dict': self.model.module.state_dict(),
-            'bbox_scale': self.train_dataset.bbox_scaled
+            'bbox_scaled': self.bbox_scaled
         }, os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:04d}.pt'))
         return
 
@@ -383,6 +493,7 @@ class SurfZTrainer():
         self.epoch = 0
         self.log_dir = args.log_dir
         self.z_scaled = args.z_scaled
+        self.bbox_scaled = args.bbox_scaled
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
                 
@@ -417,8 +528,8 @@ class SurfZTrainer():
         print('[DONE] Init parallel surface vae encoder.')
         
         train_dataset.init_encoder(self.surf_vae_encoder, self.z_scaled)
-        val_dataset.init_encoder(self.surf_vae_encoder, train_dataset.z_scale)
-        if self.z_scaled is None: self.z_scaled = train_dataset.z_scale
+        val_dataset.init_encoder(self.surf_vae_encoder, train_dataset.z_scaled)
+        if self.z_scaled is None: self.z_scaled = train_dataset.z_scaled
                
         # Initialize network
         model = SurfZNet(
@@ -430,6 +541,10 @@ class SurfZTrainer():
         
         if args.finetune:
             state_dict = torch.load(args.weight)
+            if 'z_scaled' in state_dict: 
+                self.z_scaled = train_dataset.z_scaled = val_dataset.z_scaled = state_dict['z_scaled']
+            if 'bbox_scaled' in state_dict:
+                self.bbox_scaled = train_dataset.bbox_scaled = val_dataset.bbox_scaled = state_dict['bbox_scaled']
             if 'model_state_dict' in state_dict: model.load_state_dict(state_dict['model_state_dict'])
             elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
             else: model.load_state_dict(state_dict)
@@ -503,10 +618,10 @@ class SurfZTrainer():
                 bsz = len(surfPos)
                 
                 # Augment the surface position (see https://arxiv.org/abs/2106.15282)
-                # if torch.rand(1) > 0.3:
-                aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
-                aug_noise = torch.randn(surfPos.shape).to(self.device)
-                surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
+                if torch.rand(1) > 0.3:
+                    aug_ts = torch.randint(0, 15, (bsz,), device=self.device).long()
+                    aug_noise = torch.randn(surfPos.shape).to(self.device)
+                    surfPos = self.noise_scheduler.add_noise(surfPos, aug_noise, aug_ts)
             
                 surfZ = surfZ * self.z_scaled
                 self.optimizer.zero_grad() # zero gradient
@@ -532,7 +647,7 @@ class SurfZTrainer():
             if self.iters % 10 == 0:
                 wandb.log({
                     "loss-noise": total_loss, "surfz-min": surfZ[~surf_mask].min(), 
-                    'z_scale': self.z_scaled,
+                    'z_scaled': self.z_scaled,
                     "surfz-max": surfZ[~surf_mask].max(), "surfz-std": surfZ[~surf_mask].std(), 
                     "surf_mask-min": surf_mask.sum(dim=1).min(), "surf_mask-max": surf_mask.sum(dim=1).max(), 
                     "surfZ_pred-min": surfZ_pred[~surf_mask].min(), 'surfz_pred-max': surfZ_pred[~surf_mask].max()
@@ -613,7 +728,8 @@ class SurfZTrainer():
         torch.save(
             {
                 'model_state_dict': self.model.module.state_dict(),
-                'z_scale': self.z_scaled
+                'z_scaled': self.z_scaled,
+                'bbox_scaled': self.bbox_scaled
             }, 
             os.path.join(ckpt_log_dir, f'surfz_e{self.epoch:04d}.pt'))
         return

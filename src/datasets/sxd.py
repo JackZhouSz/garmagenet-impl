@@ -146,36 +146,39 @@ class SurfData(torch.utils.data.Dataset):
 
 class SurfPosData(torch.utils.data.Dataset):
     """ Surface position (3D bbox) Dataloader """
-    def __init__(self, input_data, input_list, validate=False, aug=False, pad_mode='repeat', args=None): 
+    def __init__(self, input_data, input_list, validate=False, aug=False, args=None): 
         
         self.max_face = args.max_face
         self.bbox_scaled = args.bbox_scaled
         
         self.validate = validate
         self.aug = aug
-        
-        self.pad_mode = pad_mode
-        
+                
         # Load data
         self.data_root = input_data
         self.data_fields = args.data_fields  
         self.padding = args.padding
-        
+                
         self.cache_fp = os.path.join(
             args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('ckpts', 'cache'),
             'surfpos_%s.pkl'%('validate' if validate else 'train')
         )
 
         if os.path.exists(self.cache_fp):
-            with open(self.cache_dir, 'rb') as f: self.cache = pickle.load(f)
-            print('Load cache from %s: '%(self.cache_dir), self.cache['surf_pos'].shape, len(self.cache['caption']))
+            with open(self.cache_fp, 'rb') as f: self.cache = pickle.load(f)
+            self.pos_dim = self.cache['surf_pos'].shape[-1] // 2
+            self.num_classes = len(_PANEL_CLS) + 1 if 'surf_cls' in self.data_fields else 0
+            print('Load cache from %s: '%self.cache_fp, self.cache.keys())
+            print(f'POS_DIM = {self.pos_dim};\t NUM_CLASSED = {self.num_classes}.')
 
         else:
             print('Loading %s data...'%('validation' if validate else 'training'))
             with open(input_list, 'rb') as f: 
                 self.data_list = pickle.load(f)['val' if self.validate else 'train']
-                self.data_list = [x for x in self.data_list if os.path.exists(os.path.join(self.data_root, x))]
-                if self.validate: self.data_list = random.choices(self.data_list, k=128)
+                print('*** data_list: ', self.data_list)
+                self.data_list = [os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
+                print('*** data_list: ', self.data_list)
+                # if self.validate: self.data_list = random.choices(self.data_list, k=128)
             print('Total items: ', len(self.data_list))
             self.__load_all__()
     
@@ -233,17 +236,7 @@ class SurfPosData(torch.utils.data.Dataset):
         with open(self.cache_fp, 'wb') as f: pickle.dump(self.cache, f)
                 
 
-    def __len__(self): return len(self.data_list) if hasattr(self, 'data_list') else len(self.cache['surf_pos'])
-
-
-    def __getitem__(self, index):
-        
-        start_idx, end_idx = self.cache['item_idx'][index%len(self.cache['item_idx'])]
-        
-        caption = self.cache['caption'][index%len(self.cache['item_idx'])]
-        surf_pos = self.cache['surf_pos'][start_idx:end_idx, ...]
-        surf_cls = self.cache['surf_cls'][start_idx:end_idx, ...]
-                
+    def __pad_item__(self, surf_pos, surf_cls):
         n_surfs, n_pads = surf_pos.shape[0], self.max_face-surf_pos.shape[0]
         
         if self.padding == 'repeat':
@@ -254,7 +247,7 @@ class SurfPosData(torch.utils.data.Dataset):
             pad_mask = torch.cat([
                 torch.zeros(n_surfs, dtype=bool), torch.ones(n_pads, dtype=bool)
                 ], dim=0)[rand_idx, ...]
-        
+            
         elif self.padding == 'zero':
             pad_idx = torch.randperm(n_surfs)
             pad_mask = torch.cat([
@@ -263,34 +256,59 @@ class SurfPosData(torch.utils.data.Dataset):
             surf_pos = torch.cat([
                 surf_pos[pad_idx, ...], torch.zeros((n_pads, *surf_pos.shape[1:]), dtype=surf_pos.dtype, device=surf_pos.device)
             ], dim=0)
-            surf_latents = torch.cat([
-                surf_latents[pad_idx, ...], torch.zeros((n_pads, *surf_latents.shape[1:]), dtype=surf_latents.dtype, device=surf_latents.device)
-            ], dim=0)
             surf_cls = torch.cat([
                 surf_cls[pad_idx, ...], torch.zeros((n_pads, *surf_cls.shape[1:]), dtype=surf_cls.dtype, device=surf_cls.device)-1
             ], dim=0)
+     
         else:
             raise ValueError('Invalid padding mode: %s'%self.padding)
+            
+        return surf_pos, surf_cls, pad_mask
         
-        return (
-            surf_pos, pad_mask, surf_cls, caption
-        )
-    
 
+    def __len__(self): return len(self.data_list) if hasattr(self, 'data_list') else len(self.cache['item_idx'])
+
+
+    def __getitem__(self, index):
+        
+        # if hasattr(self, 'cache'):
+        start_idx, end_idx = self.cache['item_idx'][index%len(self.cache['item_idx'])]
+        caption = self.cache['caption'][index%len(self.cache['item_idx'])]
+        surf_pos = self.cache['surf_pos'][start_idx:end_idx, ...]
+        surf_cls = self.cache['surf_cls'][start_idx:end_idx, ...]
+        # else:
+        #     data_fp = self.data_list[index]
+        #     surf_pos, surf_cls, caption = self.__load_one__(data_fp)
+        
+        surf_pos = surf_pos * self.bbox_scaled
+        surf_pos, surf_cls, pad_mask = self.__pad_item__(surf_pos, surf_cls)
+        
+        # shuffle caption
+        if caption:
+            caption = [x.strip().lower() for x in caption.split(',')]
+            random.shuffle(caption)
+            if np.random.rand() > 0.5:
+                rand_length = random.randint(len(caption)-4, len(caption))
+                caption = caption[:max(2, rand_length)]
+                if 'dress' not in caption:
+                    caption.append('dress')
+                    random.shuffle(caption)
+            caption = ', '.join(caption)
+                    
+        return (surf_pos, pad_mask, surf_cls, caption)
+    
+    
 class SurfZData(torch.utils.data.Dataset):
     """ Surface latent geometry Dataloader """
     def __init__(
         self, 
         input_data, 
         input_list, 
-        z_encoder=None, 
         validate=False, 
         aug=False, 
         args=None
         ): 
-        
-        self.z_encoder = z_encoder
-        
+                
         self.max_face = args.max_face
         self.bbox_scaled = args.bbox_scaled
         
@@ -333,15 +351,32 @@ class SurfZData(torch.utils.data.Dataset):
         return len(self.data_list)
     
     
-    def init_encoder(self, z_encoder, z_scale=None): 
+    def init_encoder(self, z_encoder, z_scaled=None): 
         print("Init z_encoder...")
         self.z_encoder = z_encoder
-        if z_scale is not None: self.z_scale = z_scale
+        if z_scaled is not None: self.z_scaled = z_scaled
         if not hasattr(self, 'cache'): self.__load_and_encode_all__()
         elif 'latent' not in self.cache: self.__encode_chunk__()
         
         
     def update(self): self.__next_chunk__(lazy=True)
+
+
+    def __init_zero_latent__(self):
+        if hasattr(self, 'zero_latent'): return
+        
+        try:
+            z_device = self.z_encoder.module.parameters().__next__().device
+        except:
+            z_device = self.z_encoder.parameters().__next__().device  
+        
+        with torch.no_grad():
+            self.zero_latent = self.z_encoder(
+                torch.zeros((1, self.num_channels, self.resolution, self.resolution), device=z_device)
+                ).flatten(start_dim=1).detach().cpu()
+            
+        print('Init zero latent: ', self.zero_latent.shape,self.zero_latent.min(), self.zero_latent.max(), self.zero_latent.mean(), self.zero_latent.std())
+        
 
 
     def __load_one__(self, data_fp):
@@ -457,9 +492,9 @@ class SurfZData(torch.utils.data.Dataset):
         self.cache['latent'] = torch.cat(_surf_latents, dim=0).detach().cpu()        
         del self.cache['surf_ncs']        
 
-        if not hasattr(self, 'z_scale'): 
-            self.z_scale = 1.0 / (self.cache['latent'].std() + 1e-6)
-            print("Initialize z_scale: ", self.z_scale)
+        if not hasattr(self, 'z_scaled'): 
+            self.z_scaled = 1.0 / (self.cache['latent'].std() + 1e-6)
+            print("Initialize z_scaled: ", self.z_scaled)
     
         print('Encode all data: ', self.cache['latent'].shape, self.cache.keys())
         
@@ -473,14 +508,9 @@ class SurfZData(torch.utils.data.Dataset):
         
         if os.path.exists(self.cache_fp): 
             with open(self.cache_fp, 'rb') as f: self.cache = pickle.load(f)
-            if not hasattr(self, 'z_scale'): self.z_scale = 1.0 / (self.cache['latent'].std() + 1e-6)
-            if self.padding == 'zerolatent' and not hasattr(self, 'zero_latent'):
-                with torch.no_grad():
-                    self.zero_latent = self.z_encoder(
-                        torch.zeros((1, self.num_channels, self.resolution, self.resolution), device=z_device)
-                        ).flatten(start_dim=1).detach().cpu()
-                print('Init zero latent: ', self.zero_latent.shape,self.zero_latent.min(), self.zero_latent.max(), self.zero_latent.mean(), self.zero_latent.std())
-            print('Load cache from %s: '%(self.cache_fp), self.cache['surf_pos'].shape, self.cache['latent'].shape, ' z_scale: ', self.z_scale)
+            if not hasattr(self, 'z_scaled'): self.z_scaled = 1.0 / (self.cache['latent'].std() + 1e-6)
+            if self.padding == 'zerolatent' and not hasattr(self, 'zero_latent'): self.__init_zero_latent__()
+            print('Load cache from %s: '%(self.cache_fp), self.cache['surf_pos'].shape, self.cache['latent'].shape, ' z_scaled: ', self.z_scaled)
             return
         
         print('Encoding all items from: ', self.data_root)
@@ -526,11 +556,19 @@ class SurfZData(torch.utils.data.Dataset):
         self.cache = cache
         
         print('Saving latents tp %s: '%self.cache_fp, self.cache['latent'].shape, self.cache['latent'].std())
+        os.makedirs(os.path.dirname(self.cache_fp), exist_ok=True)
         with open(self.cache_fp, 'wb') as f: pickle.dump(cache, f)
         
-        if not hasattr(self, 'z_scale'): 
-            self.z_scale = 1.0 / (self.cache['latent'].std() + 1e-6)
-            print("Initialize z_scale: ", self.z_scale)
+        if not hasattr(self, 'z_scaled'): 
+            self.z_scaled = 1.0 / (self.cache['latent'].std() + 1e-6)
+            print("Initialize z_scaled: ", self.z_scaled)
+            
+        if self.padding == 'zerolatent' and not hasattr(self, 'zero_latent'):
+            with torch.no_grad():
+                self.zero_latent = self.z_encoder(
+                    torch.zeros((1, self.num_channels, self.resolution, self.resolution), device=z_device)
+                    ).flatten(start_dim=1).detach().cpu()
+            print('Init zero latent: ', self.zero_latent.shape,self.zero_latent.min(), self.zero_latent.max(), self.zero_latent.mean(), self.zero_latent.std())
             
         del self.z_encoder
         torch.cuda.empty_cache()
@@ -597,7 +635,7 @@ class SurfZData(torch.utils.data.Dataset):
         caption = self.cache['caption'][index%len(self.cache['item_idx'])]
 
         surf_pos = self.cache['surf_pos'][start_idx:end_idx, ...] * self.bbox_scaled
-        surf_latents = self.cache['latent'][start_idx:end_idx, ...] * self.z_scale
+        surf_latents = self.cache['latent'][start_idx:end_idx, ...] * self.z_scaled
         surf_cls = self.cache['surf_cls'][start_idx:end_idx, ...]
         
         surf_pos, surf_latents, surf_cls, pad_mask = self.__pad_latents__(
