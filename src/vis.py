@@ -77,7 +77,7 @@ def _create_bounding_box_lines(min_point, max_point, color):
         y=y_lines,
         z=z_lines,
         mode='lines',
-        line=dict(color=color, width=5),
+        line=dict(color=color, width=2),
         showlegend=False
     )
     return line_trace
@@ -133,6 +133,94 @@ def _create_bounding_box_mesh(min_point, max_point, color, opacity=0.2):
     )
 
     return mesh
+
+
+def draw_bbox_geometry(
+    bboxes, 
+    bbox_colors, 
+    points=None, 
+    point_masks=None, 
+    point_colors=None, 
+    num_point_samples=1000, 
+    title='',
+    output_fp=None):
+    
+    fig = go.Figure()
+    for idx in range(len(bboxes)):
+        # visuzlize point clouds if given
+        if points is not None:
+            cur_points, cur_points_mask = points[idx].reshape(-1, 3), point_masks[idx].reshape(-1)
+            cur_points = cur_points[cur_points_mask, :]
+            if cur_points.shape[0] > num_point_samples:
+                rand_idx = np.random.choice(cur_points.shape[0], num_point_samples, replace=False)
+                cur_points = cur_points[rand_idx, :]
+            fig.add_trace(go.Scatter3d(
+                x=cur_points[:, 0],
+                y=cur_points[:, 1],
+                z=cur_points[:, 2],
+                mode='markers',
+                marker=dict(size=2, color=point_colors[idx]),
+                name=f'Point Cloud {idx+1}'
+            ))
+            
+        # Add the bounding box lines
+        min_point, max_point = bboxes[idx, :3], bboxes[idx, 3:]
+        bbox_lines = _create_bounding_box_lines(min_point, max_point, color=bbox_colors[idx])
+        fig.add_trace(bbox_lines)
+        # Add the bounding box surfaces with transparency
+        bbox_mesh = _create_bounding_box_mesh(min_point, max_point, color=bbox_colors[idx], opacity=0.05)
+        fig.add_trace(bbox_mesh)
+
+
+    camera = dict(
+        up=dict(x=0, y=1, z=0),
+        center=dict(x=0, y=0, z=0),
+        eye=dict(x=-1.0, y=0, z=2.0)
+    )
+
+    # Update layout
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(
+                visible=False,
+                showbackground=False,
+                showgrid=False,
+                showline=False,
+                showticklabels=False,
+                title=''
+            ),
+            yaxis=dict(
+                visible=False,
+                showbackground=False,
+                showgrid=False,
+                showline=False,
+                showticklabels=False,
+                title=''
+            ),
+            zaxis=dict(
+                visible=False,
+                showbackground=False,
+                showgrid=False,
+                showline=False,
+                showticklabels=False,
+                title=''
+            ),
+            aspectmode='data'  # Keep the aspect ratio of data
+        ),
+        width=800,
+        height=800,
+        margin=dict(r=0, l=0, b=0, t=0),
+        showlegend=False,
+        title=dict(text=title, automargin=True),
+        scene_camera=camera,
+        plot_bgcolor='rgba(0,0,0,0)',  # Transparent plot background
+        paper_bgcolor='rgba(0,0,0,0)'  # Transparent paper background
+    )
+    
+    if output_fp is not None: fig.write_image(output_fp, format='png')
+    else: fig.show()
+        
+    # return fig
 
 
 def draw_geometry(surf_pos, surf_ncs):

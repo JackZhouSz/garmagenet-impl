@@ -1234,7 +1234,7 @@ class SurfZNet(nn.Module):
         
         # print('[SurfZNet] token', tokens.size(), tokens.min(), tokens.max())
         # print('[SurfZNet] mask', surf_mask.size(), surf_mask.sum(dim=1).min(), surf_mask.sum(dim=1).max())
-        print('[SurfZNet] output', output.size(), output.min(), output.max())
+        # print('[SurfZNet] output', output.size(), output.min(), output.max())
         
         pred = self.fc_out(output)
         return pred
