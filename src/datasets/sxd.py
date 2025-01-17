@@ -83,7 +83,12 @@ class SurfData(torch.utils.data.Dataset):
         self.data_fields = data_fields   
 
         print('Loading %s data...'%('validation' if validate else 'training'))
-        with open(input_list, "rb") as tf: self.data_list = pickle.load(tf)['val' if validate else 'train']
+        with open(input_list, "rb") as tf: 
+            self.data_list = pickle.load(tf)['val' if validate else 'train']
+            self.data_list = [
+                os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list \
+                if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))
+                ]
         print("Total items: ", len(self.data_list))
 
         self.chunksize = chunksize if chunksize > 0 and chunksize < len(self.data_list) else len(self.data_list)
@@ -114,6 +119,7 @@ class SurfData(torch.utils.data.Dataset):
                 surf_ncs = []
                 if 'surf_ncs' in self.data_fields: surf_ncs.append(data['surf_ncs'].astype(np.float32))
                 if 'surf_uv_ncs' in self.data_fields: surf_ncs.append(data['surf_uv_ncs'].astype(np.float32))
+                if 'surf_normals' in self.data_fields: surf_ncs.append(data['surf_normals'].astype(np.float32))
                 if 'surf_mask' in self.data_fields: surf_ncs.append(data['surf_mask'].astype(np.float32)*2.0-1.0)
                                         
                 surf_ncs = np.concatenate(surf_ncs, axis=-1)
@@ -175,9 +181,10 @@ class SurfPosData(torch.utils.data.Dataset):
             print('Loading %s data...'%('validation' if validate else 'training'))
             with open(input_list, 'rb') as f: 
                 self.data_list = pickle.load(f)['val' if self.validate else 'train']
-                print('*** data_list: ', self.data_list)
-                self.data_list = [os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
-                print('*** data_list: ', self.data_list)
+                self.data_list = [
+                    os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list \
+                    if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
+                print('*** data_list: ', self.data_list[0])
                 # if self.validate: self.data_list = random.choices(self.data_list, k=128)
             print('Total items: ', len(self.data_list))
             self.__load_all__()

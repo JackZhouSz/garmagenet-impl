@@ -13,10 +13,8 @@ def get_args_vae():
     # Dataset configuration
     parser.add_argument('--data', type=str, default='/data/AIGP/brebrep_reso_64_edge_snap', 
                         help='Path to data folder')  
-    parser.add_argument('--train_list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
-                        help='Path to training list')  
-    parser.add_argument('--val_list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
-                        help='Path to validation list')  
+    parser.add_argument('--list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
+                        help='Path to data list')  
     parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
     parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
     parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
@@ -53,10 +51,10 @@ def run(args):
     
     # Initialize dataset loader and trainer
     train_dataset = SurfData(
-        args.data, args.train_list, data_fields=args.data_fields, 
+        args.data, args.list, data_fields=args.data_fields, 
         validate=False, aug=args.data_aug, chunksize=args.chunksize)
     val_dataset = SurfData(
-        args.data, args.val_list, data_fields=args.data_fields, 
+        args.data, args.list, data_fields=args.data_fields, 
         validate=True, aug=False, chunksize=args.chunksize)
     vae = SurfVAETrainer(args, train_dataset, val_dataset)
 
