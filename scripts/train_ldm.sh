@@ -10,14 +10,16 @@
 # 256 lsr ===
 # zero padding xyz uv mask Q1-4
 # POS
+export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
-    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800/encoder_mode \
     --padding zero \
     --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_uncond --train_nepoch 100000 --test_nepoch 100 --save_nepoch 1000 \
     --batch_size 512 --max_face 32 --bbox_scaled 1.0 \
     --data_fields surf_bbox_wcs surf_uv_bbox_wcs
 # Z
+export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfz \
     --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \

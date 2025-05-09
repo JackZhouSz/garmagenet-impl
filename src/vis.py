@@ -1,3 +1,7 @@
+"""
+一个比较原始但是能跑通的版本，用于批量生成数据
+"""
+
 import os
 import random
 from glob import glob

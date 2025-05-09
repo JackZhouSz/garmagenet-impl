@@ -85,6 +85,8 @@ class SurfVAETrainer():
                                              shuffle=False, 
                                              batch_size=self.batch_size,
                                              num_workers=8)
+
+        self.epoch = self.iters // len(self.train_dataloader)
         return
 
     
@@ -269,7 +271,9 @@ class SurfPosTrainer():
             train_dataset, shuffle=True, batch_size=args.batch_size, num_workers=16)
         self.val_dataloader = torch.utils.data.DataLoader(
             val_dataset, shuffle=False, batch_size=args.batch_size, num_workers=16)
-        
+
+        self.epoch = self.iters // len(self.train_dataloader)
+
         return
     
     
@@ -492,6 +496,9 @@ class SurfZTrainer():
                                              shuffle=False, 
                                              batch_size=self.batch_size,
                                              num_workers=16)
+
+        self.epoch = self.iters // len(self.train_dataloader)
+
         return
     
 
