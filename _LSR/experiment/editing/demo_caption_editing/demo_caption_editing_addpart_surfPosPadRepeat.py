@@ -187,21 +187,25 @@ def init_inference(models,
                     , dim=-1).detach().cpu().numpy(), 4)
             non_repeat = bboxes[:1]
 
+            # [TODO] 这一步中需要保持原有不变的BBox的位置
+
             # _surf_pos_mask
             for bbox_idx in range(1, len(bboxes)):
                 bbox = bboxes[bbox_idx]
 
-                # （2D）判断BBox的大小是否非0
-                bbox_threshold = 2e-6
-                assert bbox_threshold >= 0. and bbox_threshold <= 1.
-                v = 1
-                is_thin = False  # 判断是否是细长型（但面积太小）
-                for h in (bbox[1] - bbox[0])[3:]:
-                    v *= h
-                    if h > 0.02:
-                        is_thin = True
-                if v < bbox_threshold and not is_thin:
-                    continue
+                # # （2D）判断BBox的大小是否非0
+                # bbox_threshold = 2e-6
+                # assert bbox_threshold >= 0. and bbox_threshold <= 1.
+                # v = 1
+                # is_thin = False  # 判断是否是细长型（但面积太小）
+                # for h in (bbox[1] - bbox[0])[3:]:
+                #     v *= h
+                #     if h > 0.02:
+                #         is_thin = True
+                # if v < bbox_threshold and not is_thin:
+                #     continue
+
+                # 从头生成只需要最简单的dedup方式
 
                 # （2D）和现有BBox是否重复
                 bbox_threshold = 0.08
@@ -214,33 +218,33 @@ def init_inference(models,
                 if same.sum() >= 1 or same_rev.sum() >= 1:
                     continue
 
-                # （3D）和现有BBox是否重复
-                bbox_threshold = 0.08
-                assert bbox_threshold >= 0. and bbox_threshold <= 1.
-                diff = np.max(np.max(np.abs(non_repeat - bbox)[..., :-2], -1), -1)
-                same = diff < bbox_threshold
-                bbox_rev = bbox[::-1]
-                diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., :-2], -1), -1)
-                same_rev = diff_rev < bbox_threshold
-                if same.sum() >= 1 or same_rev.sum() >= 1:
-                    continue
-
-                # （2D）和现有BBox重合了多少（蒙特卡洛方法）
-                bbox_threshold = 0.5
-                assert bbox_threshold >= 0. and bbox_threshold <= 1.
-                sample_num_points = 10000
-                b = bbox[:, -2:]
-                x_min, y_min = b[1]
-                x_max, y_max = b[0]
-                xs = np.random.uniform(x_min, x_max, sample_num_points)
-                ys = np.random.uniform(y_min, y_max, sample_num_points)
-                sampled_points = np.stack([xs, ys], axis=1)
-                x_in = (sampled_points[:, 0][:, None] >= non_repeat[:, 0, -2]) & (sampled_points[:, 0][:, None] <= non_repeat[:, 1, -2])
-                y_in = (sampled_points[:, 1][:, None] >= non_repeat[:, 0, -1]) & (sampled_points[:, 1][:, None] <= non_repeat[:, 1, -1])
-                in_mask = x_in & y_in
-                overlap_persent = np.sum(np.any(in_mask, axis=1)) / sample_num_points
-                if overlap_persent > bbox_threshold:
-                    continue
+                # # （3D）和现有BBox是否重复
+                # bbox_threshold = 0.08
+                # assert bbox_threshold >= 0. and bbox_threshold <= 1.
+                # diff = np.max(np.max(np.abs(non_repeat - bbox)[..., :-2], -1), -1)
+                # same = diff < bbox_threshold
+                # bbox_rev = bbox[::-1]
+                # diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., :-2], -1), -1)
+                # same_rev = diff_rev < bbox_threshold
+                # if same.sum() >= 1 or same_rev.sum() >= 1:
+                #     continue
+                #
+                # # （2D）和现有BBox重合了多少（蒙特卡洛方法）
+                # bbox_threshold = 0.5
+                # assert bbox_threshold >= 0. and bbox_threshold <= 1.
+                # sample_num_points = 10000
+                # b = bbox[:, -2:]
+                # x_min, y_min = b[1]
+                # x_max, y_max = b[0]
+                # xs = np.random.uniform(x_min, x_max, sample_num_points)
+                # ys = np.random.uniform(y_min, y_max, sample_num_points)
+                # sampled_points = np.stack([xs, ys], axis=1)
+                # x_in = (sampled_points[:, 0][:, None] >= non_repeat[:, 0, -2]) & (sampled_points[:, 0][:, None] <= non_repeat[:, 1, -2])
+                # y_in = (sampled_points[:, 1][:, None] >= non_repeat[:, 0, -1]) & (sampled_points[:, 1][:, None] <= non_repeat[:, 1, -1])
+                # in_mask = x_in & y_in
+                # overlap_persent = np.sum(np.any(in_mask, axis=1)) / sample_num_points
+                # if overlap_persent > bbox_threshold:
+                #     continue
 
                 non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
 
@@ -391,6 +395,8 @@ def inference_one(models,
     surf_mask = data["surf_mask"].reshape(-1, RESO, RESO, 1)
     surf_bbox_wcs = data["surf_bbox"]
     surf_uv_bbox_wcs = data["surf_uv_bbox"]
+
+    # 这个衣服最开始有几个板片
     n_surfs_orig = len(surf_ncs)
 
     # caption="dress, fited, cinched waist, stand collar, cap sleeves"
@@ -405,16 +411,90 @@ def inference_one(models,
     latent_channels = models['latent_channels']
     latent_size = models['latent_size']
 
+
+    # 生成各类所需的 mask ------------------------------------------------------------------
     mask_type = input("choose mask type:\n"
-                        "  1.  add part\n"
-                        "  2.  change part\n")
+                      "  1.  add part\n"
+                      "  2.  change part (keep all bbox)\n"
+                      "  3.  change part\n")
+    """
+    _surf_pos_mask:
+        为True的对应Panel在SurfPos的去噪过程中保持不变
+    
+    _surf_z_mask:
+        为True的对应Panel在SurfZ的去噪过程中保持不变，dedup过程中会发生改变
+    
+    _original_panel_mask:
+        为True的对应Panel是原本就有的（不论是否会发生变化），与 _original_panel_mask 组合使用
+    
+    _not_dedup_mask: 
+        为True的对应Panel在dedup的过程中会作为参考，不会被去除掉
+        
+    max_dedup_num:
+        在dedup循环判断时，最多判断到第几个BBox
+        
+    _surf_z_mask_padding:
+        在dedup结束后用什么值来pad _surf_z_mask
+    """
     if "1" in mask_type:
+        # 原有的Panels全部保留
         _surf_pos_mask = torch.ones((batch_size, max_surf, bbox_dim), dtype=torch.bool, device=device)
         _surf_pos_mask[0][n_surfs_orig:] = False
+        # _surf_pos_mask[:,:,[6,8]] = False
+
         _surf_z_mask = torch.ones((max_surf), dtype=torch.bool, device=device)
         _surf_z_mask[n_surfs_orig:] = False
+
+        # 原有板片以外的所有板片参与dedup，但Panel数量可以增加
+        _not_dedup_mask = _surf_z_mask
+        max_dedup_num = max_surf
+
+    elif "2" in mask_type:
+        # 原有的Panels的BBox全部保留
+        _surf_pos_mask = torch.ones((batch_size, max_surf, bbox_dim), dtype=torch.bool, device=device)
+        # _surf_pos_mask[:, :, 6:] = False
+        # _surf_pos_mask[:,:,[6,8]] = False
+        _surf_z_mask = torch.ones((max_surf), dtype=torch.bool, device=device)
+        # 指定原有的Panels中那些的geometry需要重新生成
+        indices = input("Enter panel indices for geometry changing:\n")
+        indices = indices.split(" ")
+        indices = [int(i) for i in indices]
+        for i in indices:
+            if i >= n_surfs_orig:
+                raise ValueError("Wrone Input Index")
+        _surf_z_mask[indices]=False
+        if "3" in mask_type:
+            _surf_pos_mask[0][indices] = False
+        # 所有板片不参与dedup，Panel数量保持不变
+        _not_dedup_mask = torch.ones((max_surf), dtype=torch.bool, device=device)
+        _not_dedup_mask[n_surfs_orig:] = False
+        max_dedup_num = n_surfs_orig
+
+    elif "3" in mask_type:
+        # 原有的Panels的BBox全部保留
+        _surf_pos_mask = torch.ones((batch_size, max_surf, bbox_dim), dtype=torch.bool, device=device)
+        _surf_pos_mask[0][n_surfs_orig:] = False
+        # _surf_pos_mask[:, :, 6:] = False
+        # _surf_pos_mask[:,:,[6,8]] = False
+        _surf_z_mask = torch.ones((max_surf), dtype=torch.bool, device=device)
+        _surf_z_mask[n_surfs_orig:] = False
+        # 指定原有的Panels中那些的geometry需要重新生成
+        indices = input("Enter panel indices for geometry changing:\n")
+        indices = indices.split(" ")
+        indices = [int(i) for i in indices]
+        for i in indices:
+            if i >= n_surfs_orig:
+                raise ValueError("Wrone Input Index")
+        _surf_z_mask[indices]=False
+        _surf_pos_mask[0][indices] = False  # 和2的区别
+        # 所有板片不参与dedup，Panel数量保持不变
+        _not_dedup_mask = _surf_z_mask
+        max_dedup_num = max_surf  # 和2的区别
     else:
         raise NotImplementedError
+
+    # _original_panel_mask = torch.zeros((max_surf), dtype=torch.bool, device=device)
+    # _original_panel_mask[:n_surfs_orig] = True
 
     # _surf_pos_mask[0,:] = False
     # _surf_z_mask[:] = False
@@ -423,7 +503,7 @@ def inference_one(models,
     text_embeding = text_enc(caption) \
         if caption is not None and text_enc is not None else None
 
-    # SurfPos ===
+    # SurfPos  ------------------------------------------------------------------
     surf_pos_gt = torch.tensor(np.concatenate([surf_bbox_wcs, surf_uv_bbox_wcs], axis=-1), device=device)
     n_pads = max_surf-n_surfs_orig
     pad_idx = torch.arange(n_surfs_orig)
@@ -431,7 +511,7 @@ def inference_one(models,
         surf_pos_gt[pad_idx, ...], torch.zeros((n_pads, *surf_pos_gt.shape[1:]), dtype=surf_pos_gt.dtype, device=surf_pos_gt.device)
     ], dim=0)[None, ...]
 
-    # generate bbox by denoising
+    # generate bbox by denoising ===
     _surf_pos = randn_tensor((batch_size, max_surf, bbox_dim)).to(device)
     ddpm_scheduler.set_timesteps(1000)
 
@@ -460,7 +540,7 @@ def inference_one(models,
         show_num=True,
         fig_show="browser"
     )
-
+    # BBox Dedup ------------------------------------------------------------------
     if dedup:
         for ii in range(batch_size):
             # bboxes = np.round(_surf_pos[ii].unflatten(-1, torch.Size([2, 5])).detach().cpu().numpy(), 4)  # [...,-2:]  # mask维度
@@ -468,11 +548,19 @@ def inference_one(models,
                 torch.concatenate(
                     [_surf_pos[ii][:, :6].unflatten(-1, torch.Size([2, 3])), _surf_pos[ii][:, 6:].unflatten(-1, torch.Size([2, 2]))]
                     , dim=-1).detach().cpu().numpy(), 4)
-            non_repeat = bboxes[_surf_z_mask.detach().cpu().numpy()]
+            # non_repeat = bboxes[_surf_z_mask.detach().cpu().numpy()]
+            # 原有的一部分BBox不参与dedup，作为其它BBox dedup的参考
+            non_repeat = bboxes[_not_dedup_mask.detach().cpu().numpy()]
 
-            # _surf_pos_mask
-            for bbox_idx in range(0, len(bboxes)):
-                if _surf_z_mask[bbox_idx]:
+            # dedup_map记录dedup过程中，原有的需要保留的Panel的位置发生的变化
+            dedup_unchanged_map = []
+            for bbox_idx in range(0, max_dedup_num):
+                if _not_dedup_mask[bbox_idx]:
+                    dedup_unchanged_map.append([bbox_idx, len(dedup_unchanged_map)])
+            dedup_unchanged_map = np.array(dedup_unchanged_map)
+
+            for bbox_idx in range(0, max_dedup_num):
+                if _not_dedup_mask[bbox_idx]:
                     continue
 
                 bbox = bboxes[bbox_idx]
@@ -501,7 +589,7 @@ def inference_one(models,
                     continue
 
                 # （3D）和现有BBox是否重复
-                bbox_threshold = 0.08
+                bbox_threshold = 0.12
                 assert bbox_threshold >= 0. and bbox_threshold <= 1.
                 diff = np.max(np.max(np.abs(non_repeat - bbox)[..., :-2], -1), -1)
                 same = diff < bbox_threshold
@@ -511,34 +599,66 @@ def inference_one(models,
                 if same.sum() >= 1 or same_rev.sum() >= 1:
                     continue
 
-                # （2D）和现有BBox重合了多少（蒙特卡洛方法）
-                bbox_threshold = 0.5
-                assert bbox_threshold>=0. and bbox_threshold<=1.
-                sample_num_points = 10000
-                b = bbox[:,-2:]
-                x_min, y_min = b[1]
-                x_max, y_max = b[0]
-                xs = np.random.uniform(x_min, x_max, sample_num_points)
-                ys = np.random.uniform(y_min, y_max, sample_num_points)
-                sampled_points = np.stack([xs, ys], axis=1)
-                x_in = (sampled_points[:, 0][:, None] >= non_repeat[:, 0, -2]) & (sampled_points[:, 0][:, None] <= non_repeat[:, 1, -2])
-                y_in = (sampled_points[:, 1][:, None] >= non_repeat[:, 0, -1]) & (sampled_points[:, 1][:, None] <= non_repeat[:, 1, -1])
-                in_mask = x_in & y_in
-                overlap_persent = np.sum(np.any(in_mask, axis=1)) / sample_num_points
-                if overlap_persent > bbox_threshold:
-                    continue
+                # # （2D）和现有BBox重合了多少（蒙特卡洛方法）
+                # bbox_threshold = 0.5
+                # assert bbox_threshold>=0. and bbox_threshold<=1.
+                # sample_num_points = 10000
+                # b = bbox[:,-2:]
+                # x_min, y_min = b[1]
+                # x_max, y_max = b[0]
+                # xs = np.random.uniform(x_min, x_max, sample_num_points)
+                # ys = np.random.uniform(y_min, y_max, sample_num_points)
+                # sampled_points = np.stack([xs, ys], axis=1)
+                # x_in = (sampled_points[:, 0][:, None] >= non_repeat[:, 0, -2]) & (sampled_points[:, 0][:, None] <= non_repeat[:, 1, -2])
+                # y_in = (sampled_points[:, 1][:, None] >= non_repeat[:, 0, -1]) & (sampled_points[:, 1][:, None] <= non_repeat[:, 1, -1])
+                # in_mask = x_in & y_in
+                # overlap_persent = np.sum(np.any(in_mask, axis=1)) / sample_num_points
+                # if overlap_persent > bbox_threshold:
+                #     continue
 
                 non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
 
             # bboxes = non_repeat.reshape(len(non_repeat), -1)
-            bboxes = np.concatenate([non_repeat[:, :, :3].reshape(len(non_repeat), -1), non_repeat[:, :, 3:].reshape(len(non_repeat), -1)], axis=-1)
-            surf_panel_mask = torch.zeros((1, len(bboxes))) == 1
-            _surf_pos = torch.concat([torch.FloatTensor(bboxes), torch.zeros(max_surf - len(bboxes), 10)]).unsqueeze(0)
-            _surf_panel_mask = torch.concat([surf_panel_mask, torch.zeros(1, max_surf - len(bboxes)) == 0], -1)
-    else:
-        _surf_panel_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
 
-    n_surfs = torch.sum(~_surf_panel_mask)
+            # 去重后还有多少Panels
+            n_surfs = len(non_repeat)
+
+            bboxes = np.concatenate([non_repeat[:, :, :3].reshape(n_surfs, -1), non_repeat[:, :, 3:].reshape(n_surfs, -1)], axis=-1)
+            surf_panel_mask = torch.zeros((1, n_surfs)) == 1
+            _surf_pos = torch.concat([torch.FloatTensor(bboxes), torch.zeros(max_surf - n_surfs, 10)]).unsqueeze(0)
+            # 有效的板片的mask，有效的为False，用于SurfZ的mask
+            _surf_panel_mask = torch.concat([surf_panel_mask, torch.zeros(1, max_surf - n_surfs) == 0], -1)
+
+            # [TODO] 根据dedup_map处理原始数据（保留不变的，去除筛掉的）
+            n_surfs_unchanged = len(dedup_unchanged_map)  # 有多少原有的BBox被保留了下来
+
+            surf_ncs = surf_ncs[dedup_unchanged_map[:, 0]]
+            surf_uv_ncs = surf_uv_ncs[dedup_unchanged_map[:, 0]]
+            surf_mask = surf_mask[dedup_unchanged_map[:, 0]]
+            surf_bbox_wcs = surf_bbox_wcs[dedup_unchanged_map[:, 0]]
+            surf_uv_bbox_wcs = surf_uv_bbox_wcs[dedup_unchanged_map[:, 0]]
+
+            # dedup时，如果对原有的BBox进行了编辑，会导致 _surf_z_mask 的总长度小于 max_surf, 需要选择用True还是False填充
+            _surf_z_mask_padding = _surf_z_mask[-1]
+            pad_len = max_surf - n_surfs_unchanged  # 填充的长度
+            _surf_z_mask_padding = torch.ones(pad_len, dtype=torch.bool, device = device) if _surf_z_mask_padding else torch.zeros(pad_len, dtype=torch.bool, device=device)
+
+
+            _surf_z_mask = _surf_z_mask[dedup_unchanged_map[:, 0]]
+            # 后面pad的部分为True还是False没有意义，因为这部分Panels对应的_surf_panel_mask为True，这部分BBox的Geometry不会生成
+            _surf_z_mask = torch.concatenate([_surf_z_mask, _surf_z_mask_padding])
+
+            # 有哪些板片重新生成了
+            _edited_mask = np.ones((max_surf), dtype=np.bool)  # 用于标注哪些panel被编辑过了
+            _edited_mask[:n_surfs_unchanged] = False
+            _edited_mask[n_surfs:] = False
+    else:
+        # _surf_panel_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
+        raise NotImplementedError
+
+    # # 去重完还剩多少BBox
+    # n_surfs = torch.sum(~_surf_panel_mask)
+
     # [test] vis BBox
     colors = [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, n_surfs)]
     _surf_pos_ = _surf_pos[:, :n_surfs]
@@ -553,11 +673,13 @@ def inference_one(models,
         fig_show="browser"
     )
 
-    # SurfZ ===
+    # SurfZ ------------------------------------------------------------------
     surf_gt = torch.tensor(np.concatenate([surf_ncs, surf_uv_ncs, surf_mask * 2. - 1], axis=-1), device=device, dtype=torch.float32)
+    n_pads = max_surf - n_surfs_unchanged
+    pad_idx = torch.arange(n_surfs_unchanged, device=device)
     # pad zero
-    _surf_gt = torch.cat([
-        surf_gt[pad_idx, ...], torch.zeros((n_pads, *surf_gt.shape[1:]), dtype=surf_gt.dtype, device=surf_gt.device)
+    _surf_gt = torch.concatenate([
+        surf_gt[pad_idx, ...], torch.zeros((n_pads, RESO,RESO,6), dtype=torch.float32, device=device)
     ], dim=0)[None, ...]
 
     with torch.no_grad():
@@ -581,10 +703,10 @@ def inference_one(models,
     _surf_z[0][_surf_z_mask] = _surf_z_gt[0][_surf_z_mask]
     surf_z = _surf_z[:,:n_surfs]
 
-
     # VAE Decoding ===
     with torch.no_grad(): decoded_surf_pos = surf_vae_decoder(surf_z.view(-1, latent_channels, latent_size, latent_size))
-    decoded_surf_pos[_surf_z_mask[:n_surfs]] = torch.tensor(np.concatenate([surf_ncs,surf_uv_ncs,surf_mask],axis=-1).transpose(0,3,1,2),device=device)[_surf_z_mask[:n_surfs_orig]]
+
+    decoded_surf_pos[_surf_z_mask[:n_surfs]] = _surf_gt[0].permute(0,3,1,2)[:n_surfs][_surf_z_mask[:n_surfs]]
     # [test] vis geoimg
     if vis:
         pred_img = make_grid(decoded_surf_pos, nrow=6, normalize=True, value_range=(-1,1))
@@ -652,13 +774,12 @@ def inference_one(models,
             fig_show="browser"
         )
 
-    if "1" in mask_type:
-        _edited_mask = np.ones((max_surf), dtype=np.bool)  # 用于标注哪些panel被编辑过了
-        _edited_mask[:n_surfs_orig] = False
-        _edited_mask[n_surfs:] = False
-    else:
-        raise NotImplementedError
-
+    # if "1" in mask_type:
+    #     _edited_mask = np.ones((max_surf), dtype=np.bool)  # 用于标注哪些panel被编辑过了
+    #     _edited_mask[:n_surfs_orig] = False
+    #     _edited_mask[n_surfs:] = False
+    # else:
+    #     raise NotImplementedError
 
     result = {
         'surf_bbox': _surf_bbox,        # (N, 6)
@@ -704,14 +825,14 @@ def run(args):
     # caption_editing_list_dir = os.path.join(args.data_root, 'caption_editing_list')
     # list_fp_list = sorted(glob(os.path.join(caption_editing_list_dir, '*.txt')))
     # for list_fp in list_fp_list:
-    list_fp = "/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/experiment/editing/demo_caption_editing/data/caption_editing_list/000_dress, sleeveless, round-neck.txt"
+    list_fp = "/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/experiment/editing/demo_caption_editing/data/addpart_changepart_lists/000_dress, sleeveless, round-neck.txt"
 
     with open(list_fp, 'r', encoding='utf-8') as f:
         caption_list = [line.strip() for line in f]
 
     data = None
     history = []
-    for idx, caption in tqdm(enumerate(caption_list)):
+    for idx, caption in enumerate(caption_list):
         # fp
         if idx == 0:
             number = len(os.listdir(args.output_root)) if os.path.exists(args.output_root) else 0
@@ -750,6 +871,7 @@ def run(args):
             elif "#s" in user_input:
                 raise NotImplementedError
             elif "#n" in user_input:
+                print(f"End     caption: {caption}")
                 break
             elif "#r" in user_input:
                 if len(history) > 0:

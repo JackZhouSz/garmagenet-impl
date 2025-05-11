@@ -1,5 +1,5 @@
 
-# batch inference with Q124ckpt xyzuv zero padding
+# batch inference with Q124ckpt xyzuv zero padding uncond
 # run on 187
 export PYTHONPATH=/data/lsr/code/style3d_gen
 python _LSR/experiment/batch_inference/batch_inference.py \
