@@ -220,7 +220,7 @@ def inference_one(
     elif args.pointcloud_encoder is not None:
         condition_emb = pointcloud_feature.reshape(1,-1)
     elif args.sketch_encoder is not None:
-        condition_emb = sketch_features
+        condition_emb = sketch_features.reshape(1,-1)
     else:
         condition_emb = None
     if condition_emb is not None:
@@ -420,12 +420,13 @@ def inference_one(
         'args': vars(args)
     }
 
-    if output_fp:
-        with open(output_fp, 'wb') as f: pickle.dump(result, f)
-
     # 如果点云condition，渲染个点云图
     if args.pointcloud_encoder is not None:
         pointcloud_condition_visualize(sampled_pc_cond, output_fp)
+        result["sampled_pc_cond"] = sampled_pc_cond
+
+    if output_fp:
+        with open(output_fp, 'wb') as f: pickle.dump(result, f)
 
     torch.cuda.empty_cache()
     print('[DONE] save to:', output_fp)

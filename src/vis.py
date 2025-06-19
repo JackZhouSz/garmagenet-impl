@@ -580,6 +580,10 @@ def draw_per_panel_geo_imgs(surf_ncs, surf_mask, colors, pad_size=5, out_dir='')
     _surf_ncs = surf_ncs.reshape(n_surfs, reso, reso, 3)
     _surf_mask = surf_mask.reshape(n_surfs, reso, reso, 1)
 
+    # 限定图像范围防止越界
+    _surf_ncs[_surf_ncs>1] = 1
+    _surf_ncs[_surf_ncs<-1] = -1
+
     for idx in range(n_surfs):
         mask_img = _surf_mask[idx, ...].astype(np.float32)
         _inv_mask_img = 1.0 - mask_img
@@ -605,3 +609,36 @@ def draw_per_panel_geo_imgs(surf_ncs, surf_mask, colors, pad_size=5, out_dir='')
         fused_pil_img.save(os.path.join(out_dir, f'surf_{idx:02d}.png'))
 
     return framed_imgs
+
+
+def get_visualization_steps():
+    """
+    get which step should be visualize during training
+
+    Args:
+        total_steps:
+
+    Returns:
+
+    """
+    total_steps = 1000
+    steps = [999]
+
+    for i in range(total_steps - 1, -1, -1):
+        if i >= 200:
+            if i % 40 == 0:
+                if i not in steps:
+                    steps.append(i)
+        elif i >= 100:
+            if i % 10 == 0:
+                steps.append(i)
+        elif i >= 50:
+            if i % 5 == 0:
+                steps.append(i)
+        elif i >= 20:
+            if i % 1 == 0:
+                steps.append(i)
+        else:
+            steps.append(i)
+
+    return steps

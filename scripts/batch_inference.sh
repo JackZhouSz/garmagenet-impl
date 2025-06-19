@@ -1,3 +1,44 @@
+# 2025_06_11 伙伴大会素材
+# batch inference Q124 sketchCond
+# run on 190
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/experiments/batch_inference/batch_inference.py \
+    --vae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --surfpos log/stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_sketchCond/ckpts/surfpos_e59000.pt \
+    --surfz log/stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_sketchCond/ckpts/surfz_e150000.pt \
+    --cache log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_Q124/encoder_mode/surfz_validate.pkl \
+    --sketch_encoder LAION2B \
+    --output generated/xyzuv_pad_zero_sketchCond_surfz_e_e150000_save_denoising \
+    --padding zero \
+    --save_denoising
+# batch inference Q124 pcCond
+# run on 188
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/experiments/batch_inference/batch_inference.py \
+    --vae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --surfpos log/stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_pcCond/ckpts/surfpos_e93000.pt \
+    --surfz log/stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_pcCond/ckpts/surfz_e200000.pt \
+    --cache log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_Q124/encoder_mode/surfz_validate.pkl \
+    --pointcloud_encoder POINT_E \
+    --output generated/xyzuv_pad_zero_pcCond_surfz_e200000_save_denoising \
+    --padding zero \
+    --save_denoising \
+    --device cuda:1
+# batch inference Q12 TextCond
+# run on 187
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/experiments/batch_inference/batch_inference.py \
+  --vae /data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e800.pt \
+  --surfpos /data/lsr/models/style3d_gen/surf_pos/stylexd_surfpos_xyzuv_pad_zero_cond_clip/ckpts/surfpos_e30000.pt \
+  --surfz /data/lsr/models/style3d_gen/surf_z/stylexd_surfz_xyzuv_mask_latent1_mode_with_caption/ckpts/surfz_e90000.pt \
+  --cache /data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e800/encoder_mode/surfz_validate.pkl \
+  --text_encoder CLIP \
+  --output generated/surfz_pos_padzero_textcond_e90000_save_denoising \
+  --padding zero \
+  --save_denoising
+
+
+
 # batch inference Q12 TextCond
 export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/experiment/batch_inference/batch_inference.py \
@@ -9,6 +50,8 @@ python src/experiment/batch_inference/batch_inference.py \
   --text_encoder CLIP \
   --output generated/surfz_pos_padzero_textcond_e90000 \
   --padding zero
+
+
 
 ## 2025_06_04 version
 # batch inference Q124 pcCond
@@ -22,8 +65,7 @@ python src/experiments/batch_inference/batch_inference.py \
     --use_original_pos \
     --pointcloud_encoder POINT_E \
     --output generated/xyzuv_pad_zero_pcCond_surfz_e200000 \
-    --padding zero
-
+    --padding zero  # --save_denoising [optional]
 # batch inference Q124 sketchCond
 # run on 190
 export PYTHONPATH=/data/lsr/code/style3d_gen
@@ -35,7 +77,8 @@ python src/experiments/batch_inference/batch_inference.py \
     --use_original_pos \
     --sketch_encoder LAION2B \
     --output generated/xyzuv_pad_zero_sketchCond_surfz_e_e150000 \
-    --padding zero
+    --padding zero  # --save_denoising [optional]
+
 
 ## 2025_05_20 version, ckpt has some problem !
 ## batch inference Q124 pcCond
@@ -50,7 +93,6 @@ python src/experiments/batch_inference/batch_inference.py \
 #    --pointcloud_encoder POINT_E \
 #    --output generated/xyzuv_pad_zero_pcCond_surfz_e95000 \
 #    --padding zero
-#
 ## batch inference Q124 sketchCond
 ## run on 190
 #export PYTHONPATH=/data/lsr/code/style3d_gen

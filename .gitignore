@@ -180,3 +180,11 @@ cython_debug/
 /notebooks/data_analysize/gen_statistics_csv/test_data/
 /notebooks/data_analysize/gen_statistics_csv/test_data_obj/
 /notebooks/data_analysize/gen_statistics_csv/test_data_json/
+/src/experiments/export_denoising_vid_byAddnoise/pkl_files/
+/src/experiments/export_denoising_vid_byAddnoise/output/
+/src/experiments/export_denoising_vid/output/
+/src/experiments/export_denoising_vid/pkl_files/
+/src/models/denoisers/dit_diffusers/
+/src/models/denoisers/dit_holopart/
+/src/models/denoisers/dit_hunyuan_2/
+/src/models/denoisers/dit_original/

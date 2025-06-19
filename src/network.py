@@ -549,14 +549,14 @@ class SurfZNet(nn.Module):
 
         layer = nn.TransformerEncoderLayer(
             d_model=self.embed_dim, 
-            nhead=self.n_heads, 
+            nhead=self.n_heads,
             norm_first=True,
             dim_feedforward=1024, 
             dropout=0.1
             )
         
         self.net = nn.TransformerEncoder(
-            layer, self.n_heads, nn.LayerNorm(self.embed_dim))
+            layer, 12, nn.LayerNorm(self.embed_dim))
 
         self.z_embed = nn.Sequential(
             nn.Linear(self.z_dim, self.embed_dim),
