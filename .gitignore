@@ -186,7 +186,6 @@ cython_debug/
 /src/experiments/export_denoising_vid/pkl_files/
 /src/models/denoisers/dit_diffusers/
 /src/models/denoisers/dit_holopart/
-/src/models/denoisers/dit_hunyuan_2/
 /src/models/denoisers/dit_original/
 output/*
 /src/models/sketch_feature_extractor/vit/test_data/
@@ -196,3 +195,7 @@ output/*
 /notebooks/data_analysize/statistics*
 /notebooks/data_analysize/*.csv
 **/output/
+/src/models/pc_backbone/point_e/examples/
+/data_process/geometry_utils/
+/data_process/stylexd_utils/
+/src/experiments/batch_inference_inpainting/

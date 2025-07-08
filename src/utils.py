@@ -945,3 +945,19 @@ def _denormalize_pts(pts, bbox):
     bbox_offset = (bbox_max + bbox_min) / 2.0
     return pts * bbox_scale + bbox_offset
 
+
+
+data_fields_dict = {
+    "surf_ncs": {
+        "title": "Geometry Images",
+        "len": 3,
+    },
+    "surf_uv_ncs": {
+        "title": "UV Images",
+        "len": 2,
+    },
+    "surf_mask": {
+        "title": "Mask Images",
+        "len": 1,
+    }
+}

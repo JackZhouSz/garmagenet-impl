@@ -13,12 +13,13 @@ from torchvision.utils import make_grid
 from matplotlib import pyplot as plt
 from matplotlib.colors import to_hex
 
-from src.network import AutoencoderKLFastDecode, SurfZNet, SurfPosNet, TextEncoder, PointcloudEncoder, SketchEncoder
+from src.network import AutoencoderKLFastDecode, SurfPosNet, TextEncoder, PointcloudEncoder, SketchEncoder
 from diffusers import DDPMScheduler  # , PNDMScheduler
-from src.utils import randn_tensor
+from src.utils import randn_tensor, data_fields_dict
 from src.vis import draw_bbox_geometry, draw_bbox_geometry_3D2D, get_visualization_steps
 
 import plotly.graph_objects as go
+
 
 
 # 可视化作为 condition 的 PointCloud
@@ -102,8 +103,8 @@ def init_models(args):
     latent_channels = args.latent_channels
     latent_size = sample_size//(2**(len(block_dims)-1))
 
-    surf_vae = AutoencoderKLFastDecode( in_channels=6,
-                                    out_channels=6,
+    surf_vae = AutoencoderKLFastDecode( in_channels=args.img_channels,
+                                    out_channels=args.img_channels,
                                     down_block_types=['DownEncoderBlock2D']*len(block_dims),
                                     up_block_types=['UpDecoderBlock2D']*len(block_dims),
                                     block_out_channels=block_dims,
@@ -150,14 +151,28 @@ def init_models(args):
     )
     surfpos_model.load_state_dict(torch.load(args.surfpos)['model_state_dict'])
     surfpos_model.to(device).eval()
-    # Load SurfZ Net
-    surfz_model = SurfZNet(
-        p_dim=10,
-        z_dim=latent_size**2*latent_channels,
-        num_heads=12,
-        condition_dim=condition_dim,
-        num_cf=-1
-        )
+
+    if args.surfz_type == 'default':
+        from src.network import SurfZNet
+        surfz_model = SurfZNet(
+            p_dim=10,
+            z_dim=latent_size**2*latent_channels,
+            num_heads=12,
+            condition_dim=condition_dim,
+            num_cf=-1
+            )
+    elif args.surfz_type == 'hunyuan_dit':
+        from src.network import SurfZNet_hunyuandit
+        surfz_model = SurfZNet_hunyuandit(
+            p_dim=10,
+            z_dim=latent_size**2*latent_channels,
+            num_heads=12,
+            condition_dim=condition_dim,
+            num_cf=-1
+            )
+    else:
+        raise NotImplementedError
+    print(f"LDM type: {args.surfz_type}")
     surfz_model.load_state_dict(torch.load(args.surfz)['model_state_dict'])
     surfz_model.to(device).eval()
 
@@ -332,9 +347,10 @@ def inference_one(
     ddpm_scheduler.set_timesteps(1000)
     with torch.no_grad():
         for t in tqdm(ddpm_scheduler.timesteps, desc="Surf-Z Denoising"):
+
             timesteps = t.reshape(-1).to(device)
             pred = surfz_model(
-                _surf_z, timesteps, _surf_pos.to(device), _surf_mask.to(device), condition_emb, is_train=False)
+                _surf_z, timesteps, _surf_pos.to(device), _surf_mask.to(device), class_label=None, condition=condition_emb, is_train=False)
             _surf_z = ddpm_scheduler.step(pred, t, _surf_z).prev_sample
 
             # 保存去噪过程
@@ -349,14 +365,22 @@ def inference_one(
     pred_img = make_grid(decoded_surf_pos, nrow=6, normalize=True, value_range=(-1,1))
 
     if vis:
-        fig, ax = plt.subplots(3, 1, figsize=(40, 40))
-        ax[0].imshow(pred_img[:3, ...].permute(1, 2, 0).detach().cpu().numpy())
-        ax[1].imshow(pred_img[3:, ...].permute(1, 2, 0).detach().cpu().numpy())
-        ax[2].imshow(pred_img[-1:, ...].permute(1, 2, 0).detach().cpu().numpy())
+        fig, ax = plt.subplots(len(args.data_fields), 1, figsize=(40, 40))
 
-        ax[0].set_title('Geometry Images')
-        ax[1].set_title('UV Images')
-        ax[2].set_title('Mask Images')
+        current_channel = 0
+        for d_idx, d_type in enumerate(args.data_fields):
+            c_st = current_channel
+            c_ed = current_channel + data_fields_dict[d_type]["len"]
+            current_channel = c_ed
+            cur_img = pred_img[c_st:c_ed, ...]
+            if data_fields_dict[d_type]["len"] == 2:
+                pad_shape = torch.tensor(cur_img.shape)
+                pad_shape[0] = 1
+                pad_shape = tuple(pad_shape)
+                pad = torch.full(pad_shape, 0.5, dtype=cur_img.dtype, device=cur_img.device)
+                cur_img = torch.cat([pad, cur_img], dim=0)  # shape: (4, 4)
+            ax[d_idx].imshow(cur_img.permute(1, 2, 0).detach().cpu().numpy())
+            ax[d_idx].set_title(data_fields_dict[d_type]["title"])
 
         plt.tight_layout()
         plt.axis('off')
@@ -365,14 +389,49 @@ def inference_one(
         else: plt.show()
         plt.close()
 
+        # # Original plot function
+        # fig, ax = plt.subplots(args.data_fields, 1, figsize=(40, 40))
+        # ax[0].imshow(pred_img[:3, ...].permute(1, 2, 0).detach().cpu().numpy())
+        # ax[1].imshow(pred_img[3:, ...].permute(1, 2, 0).detach().cpu().numpy())
+        # ax[2].imshow(pred_img[-1:, ...].permute(1, 2, 0).detach().cpu().numpy())
+        #
+        # ax[0].set_title('Geometry Images')
+        # ax[1].set_title('UV Images')
+        # ax[2].set_title('Mask Images')
+        #
+        # plt.tight_layout()
+        # plt.axis('off')
+        #
+        # if output_fp: plt.savefig(output_fp.replace('.pkl', '_geo_img.png'), transparent=True, dpi=72)
+        # else: plt.show()
+        # plt.close()
+
     # plotly visualization
     colormap = plt.cm.coolwarm
 
+    # 根据 data_fields 从解码出的数据中拆分出各个图片 ===
     _surf_bbox = _surf_pos.squeeze(0)[~_surf_mask.squeeze(0), :].detach().cpu().numpy()
     _decoded_surf = decoded_surf_pos.permute(0, 2, 3, 1).detach().cpu().numpy()
-    _surf_ncs = _decoded_surf[..., :3].reshape(n_surfs, -1, 3)
-    _surf_uv_ncs = _decoded_surf[..., 3:5].reshape(n_surfs, -1, 2)
-    _surf_ncs_mask = _decoded_surf[..., -1:].reshape(n_surfs, -1) > 0.0
+
+    _surf_ncs, _surf_uv_ncs, _surf_ncs_mask = None, None, None
+    current_channel = 0
+    for d_idx, d_type in enumerate(args.data_fields):
+        c_st = current_channel
+        c_ed = current_channel + data_fields_dict[d_type]["len"]
+        current_channel = c_ed
+
+        if d_type == 'surf_ncs':
+            _surf_ncs = _decoded_surf[..., c_st:c_ed].reshape(n_surfs, -1, 3)
+        elif d_type == 'surf_uv_ncs':
+            _surf_uv_ncs = _decoded_surf[..., c_st:c_ed].reshape(n_surfs, -1, 2)
+        elif d_type == 'surf_mask':
+            _surf_ncs_mask = _decoded_surf[..., c_st:c_ed].reshape(n_surfs, -1) > 0.0
+        else:
+            raise NotImplementedError
+
+    # _surf_ncs = _decoded_surf[..., :3].reshape(n_surfs, -1, 3)
+    # _surf_uv_ncs = _decoded_surf[..., 3:5].reshape(n_surfs, -1, 2)
+    # _surf_ncs_mask = _decoded_surf[..., -1:].reshape(n_surfs, -1) > 0.0
 
     _surf_uv_bbox = _surf_bbox[..., 6:]
     _surf_bbox = _surf_bbox[..., :6]
@@ -482,18 +541,18 @@ def run(args):
 
         inference_one(
             models,
-            args=args,
+            args = args,
             caption = caption,
-            pointcloud_feature=pointcloud_features,
+            pointcloud_feature = pointcloud_features,
             sampled_pc_cond = sampled_pc_cond,
-            sketch_features=sketch_features,
+            sketch_features = sketch_features,
             surf_pos_orig = surf_pos_orig,
-            dedup=True,
+            dedup = True,
             output_fp = output_fp,
-            vis=True,
-            data_fp=data_fp,
-            data_id_trainval=data_id_trainval,
-            save_denoising=args.save_denoising,
+            vis = True,
+            data_fp = data_fp,
+            data_id_trainval = data_id_trainval,
+            save_denoising = args.save_denoising,
         )
 
     print('[DONE]')
@@ -511,10 +570,19 @@ if __name__ == "__main__":
         '--surfpos', type=str,
         default='/data/lsr/models/style3d_gen/surf_pos/stylexd_surfpos_xyzuv_pad_repeat_uncond/ckpts/surfpos_e3000.pt',
         help='Path to SurfZ model')
+    # todo
+    # parser.add_argument(
+    #     "--surfz_type", type=str,
+    #     choices=['default', 'hunyuan_dit'], default='default',
+    #     help="Choose ldm type.")
     parser.add_argument(
         '--surfz', type=str,
         default='/data/lsr/models/style3d_gen/surf_z/stylexd_surfz_xyzuv_mask_latent1_mode/ckpts/surfz_e230000.pt',
         help='Path to SurfZ model')
+    parser.add_argument(
+        "--surfz_type", type=str,
+        choices=['default', 'hunyuan_dit'], default='default',
+        help="Choose ldm type.")
     parser.add_argument(
         '--cache', type=str,
         default='/data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode/surfpos_validate.pkl',
@@ -526,9 +594,10 @@ if __name__ == "__main__":
         '--output', type=str, default='generated/surfz_e230000',
         help='Path to output directory')
     parser.add_argument('--save_denoising', action="store_true", help='Save garmage during denoising.')
-
+    parser.add_argument('--data_fields', nargs='+', type=str, default=["surf_ncs", "surf_uv_ncs", "surf_mask"], help='Image data channels.')
     parser.add_argument('--block_dims', nargs='+', type=int, default=[16,32,32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=1, help='Latent channels of the vae model.')
+    parser.add_argument('--img_channels', type=int, default=6 , help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--reso', type=int, default=256, help='Sample size of the vae model.')
     parser.add_argument("--padding", type=str, default="repeat", choices=["repeat", "zero"], help='Padding type during surfPos training.')
     parser.add_argument('--num_samples', type=int, default=-1, help='Number of samples to inference.')

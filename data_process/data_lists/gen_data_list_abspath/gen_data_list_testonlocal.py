@@ -1,8 +1,5 @@
 """
-export PYTHONPATH=/data/lsr/code/style3d_gen
-python _LSR/gen_data_list/gen_data_list.py \
-    --garmage_dirs /data/AIGP/brep_reso_256_edge_snap_with_caption /data/AIGP/Q4/brep_reso_256_edge_snap \
-    --output_dir /data/lsr/code/style3d_gen/_LSR/gen_data_list/output
+仅用于生成用于本地测试用的DataList，测试用
 """
 
 import os
@@ -31,27 +28,6 @@ if __name__ == "__main__":
         garmage_list_ex = sorted(glob(os.path.join(garment_dir, "*.pkl")))
         garment_list.extend(garmage_list_ex)
 
-    # 按批次分别存放
-    Q_type = ["Q1", "Q2", "Q4"]  # 批次
-    Q_range = [1, 0.1, 1]  # 每批数据采样的比例
-    Q_list = {k:[] for k in Q_type}
-    for garment_path in tqdm(garment_list):
-        with open(garment_path, "rb") as f:
-            data = pickle.load(f)
-            for Q in Q_type:
-                if Q in data["data_fp"]:
-                    Q_list[Q].append(garment_path)
-                    break
-
-    # 每个批次仅取一定百分比数量
-    for i, Q in enumerate(Q_type):
-        if len(Q_list[Q])>0:
-            Q_list[Q] = keep_percentage(Q_list[Q], Q_range[i])
-
-    garment_list = []
-    for Q in Q_type:
-        garment_list.extend(Q_list[Q])
-
     # 数据集划分
     split = [9., 1.]
     data_list = {"train": [], "val": []}
@@ -67,6 +43,6 @@ if __name__ == "__main__":
     data_list["train"] = train_list
     data_list["val"] = val_list
 
-    with open(os.path.join("data_process/data_lists", "stylexd_data_split_reso_256_Q1Q2Q4.pkl"), "wb") as f:
+    with open(os.path.join("data_process/data_lists", "stylexd_data_split_reso_256_testonlocal.pkl"), "wb") as f:
         pickle.dump(data_list, f)
 

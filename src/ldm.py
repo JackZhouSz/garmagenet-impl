@@ -13,14 +13,27 @@ def get_args_ldm():
     # parser.add_argument('--dataset', type=str, default='sxd', choices=['sxd', 'brep'],
     #                     help='Dataset type, choose between [sxd, brep]')
     parser.add_argument('--data', type=str, default='data_process/deepcad_parsed', 
-                        help='Path to data folder')  
+                        help='Path to data folder')
+    # parser.add_argument('--use_data_root', action="store_true",
+    #                     help='If data list store absolute path, don`t use this flag.')
     parser.add_argument('--list', type=str, default='data_process/deepcad_data_split_6bit.pkl', 
                         help='Path to data list')  
     parser.add_argument('--cache_dir', type=str, default=None, help='Path to cached data (with latents).')
     parser.add_argument('--surfvae', type=str, default='log/deepcad_surfvae/epoch_400.pt', 
-                        help='Path to pretrained surface vae weights')  
-    parser.add_argument("--option", type=str, choices=['surfpos', 'surfz'], default='surfpos', 
+                        help='Path to pretrained surface vae weights')
+
+    # following 3 currently used to surfInpainting only
+    parser.add_argument('--surfvae_config', type=str, default="src/cfg/config/models/vae/VAE_256_xyz_mask_L16x16x1.yaml",
+                        help='Geo+Mask vae config fp')
+    parser.add_argument('--surfvae_2', type=str, default="_LSR/experiment/test_dataset/test_ckpt/stylexdQ1Q2Q4_vae_surf_256_mask_unet6_latent_16_16_1/ckpts/vae_e0050.pt",
+                        help='Mask vae weights fp')
+    parser.add_argument('--surfvae_2_config', type=str, default="src/cfg/config/models/vae/VAE_256_mask_L16x16x1.yaml",
+                        help='Mask vae config fp')
+
+    parser.add_argument("--option", type=str, choices=['surfpos', 'surfz','surfInpainting'], default='surfpos',
                         help="Choose between option [surfpos,edgepos,surfz,edgez] (default: surfpos)")
+    parser.add_argument("--denoiser_type", type=str, choices=['default', 'hunyuan_dit'], default='default',
+                        help="Choose ldm type.")
     parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
     
     # Training parameters
@@ -51,6 +64,8 @@ def get_args_ldm():
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
     parser.add_argument('--sample_mode', type=str, default='sample', choices=['mode', 'sample'], help='Encoder mode of the vae model.')
+    parser.add_argument('--num_layer', type=int, default=12, help='Layer num of ldm model.')
+    parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
 
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
@@ -71,13 +86,19 @@ def run(args):
         train_dataset = SurfPosData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
         val_dataset = SurfPosData(args.data, args.list, validate=True, aug=False, args=args)
         ldm = SurfPosTrainer(args, train_dataset, val_dataset)
-
     elif args.option == 'surfz':
         train_dataset = SurfZData(
             args.data, args.list, validate=False, aug=args.data_aug, args=args)
         val_dataset = SurfZData(
             args.data, args.list, validate=True, aug=False, args=args)
         ldm = SurfZTrainer(args, train_dataset, val_dataset)
+    elif args.option == "surfInpainting":
+            train_dataset = SurfInpaintingData(
+                args.data, args.list, validate=False, aug=args.data_aug, args=args)
+            val_dataset = SurfInpaintingData(
+                args.data, args.list, validate=True, aug=False, args=args)
+            ldm = SurfInpaintingTrainer2(args, train_dataset, val_dataset)
+            # ldm = SurfInpaintingTrainer2(args, train_dataset, val_dataset)
     else:
         assert False, 'please choose between [surfpos, surfz, edgepos, edgez]'
 

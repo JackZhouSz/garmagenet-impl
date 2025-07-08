@@ -1,0 +1,51 @@
+# Inpainting LDM === Hunyuan2.0 DIT ======================================================================================
+
+
+
+
+
+
+# Inpainting LDM ======================================================================================
+# Bsize 199:2460
+# SurfI_Type2_mask256Cond_xyzmask256_pad_zero
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data data/256/brep_reso_256_edge_snap_with_caption \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfInpainting \
+    --cache_dir /data/lsr/code/style3d_gen/log/stylexdQ1Q2Q4_vae_surf_256_mask_unet6_latent_16_16_1/cache/vae_e0550/encoder_mode \
+    --surfvae /data/lsr/code/style3d_gen/log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/ckpts/vae_e0550.pt \
+    --surfvae_config src/cfg/config/models/vae/VAE_256_xyz_mask_L16x16x1.yaml \
+    --surfvae_2 /data/lsr/code/style3d_gen/log/stylexdQ1Q2Q4_vae_surf_256_mask_unet6_latent_16_16_1/ckpts/vae_e0550.pt \
+    --surfvae_2_config src/cfg/config/models/vae/VAE_256_mask_L16x16x1.yaml \
+    --expr stylexdQ1Q2Q4_SurfI_Type2_mask256Cond_xyzmask256_pad_zero \
+    --train_nepoch 100000 --test_nepoch 10 --save_nepoch 5000 --batch_size 2460 --chunksize -1 \
+    --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --num_layer 12 --emb_dim 768\
+    --sample_mode mode --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs
+
+
+
+
+# VAE ================================================================================================
+
+# VAE xyz mask Q124, latent 16x16x1 === auto arrangement
+# Bsize 188:64
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1 \
+    --batch_size 64 --block_dims 16 32 32 64 64 --latent_channels 1 \
+    --test_nepoch 20 --save_nepoch 50 --train_nepoch 3000 \
+    --data_fields surf_ncs surf_mask --chunksize 512
+
+# VAE mask Q124, latent 8x8x1 === auto arrangement
+# Bsize 188:64
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_mask_unet6_latent_16_16_1 \
+    --batch_size 64 --block_dims 16 32 32 64 64 --latent_channels 1 \
+    --test_nepoch 20 --save_nepoch 50 --train_nepoch 3000 \
+    --data_fields surf_mask --chunksize 512
