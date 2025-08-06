@@ -7,10 +7,37 @@
 # --surfvae refer to the surface vae weights 
 # --edgevae refer to the edge vae weights
 
-# 256 lsr ===
+
+# Dit Pos 测试 (测试不同的padding) ===
+# layer 2+6  embed_dim 384 zero padding
+# 188: 2475
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfpos --denoiser_type hunyuan_dit \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_Q124/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfpos_HYdit_L2+6_emb384_pad_zero_sketchCond --train_nepoch 200000 --test_nepoch 1000 --save_nepoch 1000 \
+    --batch_size 2475 --chunksize -1 --padding zero --max_face 32 \
+    --embed_dim 384 --num_layer 2 6 \
+    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+# layer 2+6  embed_dim 384 repeat padding
+# 188: 1650
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfpos --denoiser_type hunyuan_dit \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_Q124/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfpos_HYdit_L2+6_emb384_pad_repeat_sketchCond --train_nepoch 200000 --test_nepoch 1000 --save_nepoch 1000 \
+    --batch_size 1650 --chunksize -1 --padding repeat --max_face 32 \
+    --embed_dim 384 --num_layer 2 6 \
+    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
 
 
-# 依旧是DIT的ldm，上一批实验疑似过拟合，减少几层试试 ===
+
+
+# 依旧是DIT的ldm，减少几层试试 ===
 # SurfZ_HYdit Layer 2+4 latent256 zero padding xyz mask Q1-4 sketchCond(laion2b)
 # Z Bsize 188:1650
 export PYTHONPATH=/data/lsr/code/style3d_gen

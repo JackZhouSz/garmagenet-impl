@@ -1,7 +1,5 @@
 #!/bin/bash\
 
-
-
 # VAE mask Q124
 # Bsize 187:64
 export PYTHONPATH=/data/lsr/code/style3d_gen
