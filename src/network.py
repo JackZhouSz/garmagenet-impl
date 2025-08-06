@@ -435,8 +435,7 @@ class SketchEncoder:
             self.sketch_embedder_fn = None
         else:
             raise NotImplementedError
-        # Test encoding text
-        print(f"[DONE] Init {encoder} text encoder.")
+        print(f"[DONE] Init {encoder} sketch encoder.")
 
     def _get_laion2b_sketch_embeds(
             self,
@@ -466,8 +465,13 @@ class SurfPosNet(nn.Module):
         self.condition_dim = condition_dim
         self.use_cf = num_cf > 0
 
-        layer = nn.TransformerEncoderLayer(d_model=self.embed_dim, nhead=12, norm_first=True,
-                                                   dim_feedforward=1024, dropout=0.1)
+        layer = nn.TransformerEncoderLayer(
+            d_model=self.embed_dim,
+            nhead=12,
+            norm_first=True,
+            dim_feedforward=1024,
+            dropout=0.1
+        )
         
         self.net = nn.TransformerEncoder(layer, 12, nn.LayerNorm(self.embed_dim))
 
@@ -495,14 +499,9 @@ class SurfPosNet(nn.Module):
             nn.Linear(self.embed_dim, self.p_dim),
         )
 
-        return
-
-       
     def forward(self, surfPos, timesteps, class_label=None, condition=None, is_train=False):
         """ forward pass """
         bsz, seq_len, _ = surfPos.shape
-
-        
         bsz = timesteps.size(0)
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
         p_embeds = self.p_embed(surfPos)   
@@ -528,6 +527,73 @@ class SurfPosNet(nn.Module):
         pred = self.fc_out(output)
 
         return pred
+
+
+class SurfPosNet_hunyuandit(nn.Module):
+    # def __init__(self, p_dim=6, z_dim=3 * 4 * 4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=[3, 9], num_cf=-1):
+    def __init__(
+            self,
+            p_dim=6,
+            embed_dim=768,
+            condition_dim=-1,
+            num_cf=-1,
+            num_heads = 12,
+            num_layer = [3,9]
+        ):
+        super(SurfPosNet_hunyuandit, self).__init__()
+        self.p_dim = -1
+        self.z_dim = p_dim
+        self.embed_dim = embed_dim
+        self.condition_dim = condition_dim
+        # self.out_dim = out_dim
+        # self.use_cf = num_cf > 0
+        self.num_heads = num_heads
+        self.num_layer = num_layer
+
+        if not isinstance(self.num_layer, List):
+            raise TypeError("Type of num_layer should be list.")
+        if len(self.num_layer) != 2:
+            raise ValueError("Length of num_layer should be 2.")
+
+        self.net = HunyuanDiT(
+            in_channels=self.z_dim,
+            pos_dim=self.p_dim,
+            context_in_dim=self.condition_dim,
+            hidden_size=self.embed_dim,
+            num_heads=self.num_heads,
+            depth_double_blocks=self.num_layer[0],
+            depth_single_blocks=self.num_layer[1],
+            mlp_ratio=4.0,
+            qkv_bias=True,
+            time_factor=1000,
+        )
+
+    def forward(
+            self,
+            surfPos,
+            timesteps,
+            class_label=None,
+            condition=None,
+            is_train=False
+        ):
+
+        if self.condition_dim > 0 and condition is not None:
+            if len(condition.shape) == 2:
+                condition = condition.unsqueeze(1)
+            elif len(condition.shape) == 3:
+                pass
+            else:
+                raise NotImplementedError
+
+        output = self.net(
+            x=surfPos,
+            p=None,
+            t=timesteps,
+            cond=condition,
+            attn_mask=None
+        )
+
+        return output
 
 
 class SurfZNet(nn.Module):
@@ -678,58 +744,6 @@ class SurfZNet_hunyuandit(nn.Module):
             qkv_bias=True,
             time_factor=1000,
         )
-
-        # layer = nn.TransformerEncoderLayer(
-        #     d_model=self.embed_dim,
-        #     nhead=self.n_heads,
-        #     norm_first=True,
-        #     dim_feedforward=1024,
-        #     dropout=0.1
-        # )
-        #
-        # self.net = nn.TransformerEncoder(
-        #     layer, num_layer, nn.LayerNorm(self.embed_dim))
-        #
-        # self.z_embed = nn.Sequential(
-        #     nn.Linear(self.z_dim, self.z_projector_dim),
-        #     # nn.SiLU(),
-        #     nn.Linear(self.z_projector_dim, self.embed_dim),
-        #     nn.LayerNorm(self.embed_dim),
-        #     nn.SiLU(),
-        #     nn.Linear(self.embed_dim, self.embed_dim),
-        # )
-        #
-        # self.p_embed = nn.Sequential(
-        #     nn.Linear(self.p_dim, self.embed_dim),
-        #     nn.LayerNorm(self.embed_dim),
-        #     nn.SiLU(),
-        #     nn.Linear(self.embed_dim, self.embed_dim),
-        # )
-        #
-        # self.time_embed = nn.Sequential(
-        #     nn.Linear(self.embed_dim, self.embed_dim),
-        #     nn.LayerNorm(self.embed_dim),
-        #     nn.SiLU(),
-        #     nn.Linear(self.embed_dim, self.embed_dim),
-        # )
-        #
-        # if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
-        # if self.condition_dim > 0:
-        #     self.cond_embed = nn.Sequential(
-        #         nn.Linear(self.condition_dim, self.embed_dim),
-        #         nn.LayerNorm(self.embed_dim),
-        #         nn.SiLU(),
-        #         nn.Linear(self.embed_dim, self.embed_dim),
-        #     )
-        #
-        # self.fc_out = nn.Sequential(
-        #     nn.Linear(self.embed_dim, self.embed_dim),
-        #     nn.LayerNorm(self.embed_dim),
-        #     nn.SiLU(),
-        #     nn.Linear(self.embed_dim, self.z_dim) if self.out_dim < 0 else nn.Linear(self.embed_dim, self.out_dim),
-        # )
-        #
-        # return
 
     def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, condition=None, is_train=False):
         """ forward pass """

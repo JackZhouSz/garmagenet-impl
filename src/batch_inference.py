@@ -226,7 +226,8 @@ def run(args):
     
     
 if __name__ == "__main__":
-    
+    raise NotImplementedError("Please use src/experiments/batch_inference/batch_inference.py")
+
     parser = argparse.ArgumentParser()
     
     # path configuration

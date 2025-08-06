@@ -1,4 +1,18 @@
-# 2025_07_07 做Supplementary素材 (使用Hunyuan2.0 DIT做ldm) ===
+# 之前vae 4200那一版，稍微改了改 ===
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/experiments/batch_inference/batch_inference.py \
+    --vae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --surfpos log/stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_sketchCond/ckpts/surfpos_e59000.pt \
+    --surfz log/stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_sketchCond_finetune_vae_e4200/ckpts/surfz_e250000.pt \
+    --cache log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_Q124/encoder_mode/surfz_validate.pkl \
+    --use_original_pos \
+    --sketch_encoder LAION2B \
+    --output generated/xyzuv_pad_zero_sketchCond_surfz_e250000_vae_e0800 \
+    --padding zero
+
+
+# 2025_07_07 使用Hunyuan2.0 DIT做ldm ===
 # batch inference Q124 HYdit sketchCond
 # run on 188
 cd /data/lsr/code/style3d_gen

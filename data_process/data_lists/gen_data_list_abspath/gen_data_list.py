@@ -1,6 +1,6 @@
 """
 export PYTHONPATH=/data/lsr/code/style3d_gen
-python _LSR/gen_data_list/gen_data_list.py \
+python data_process/data_lists/gen_data_list_abspath/gen_data_list.py \
     --garmage_dirs /data/AIGP/brep_reso_256_edge_snap_with_caption /data/AIGP/Q4/brep_reso_256_edge_snap \
     --output_dir /data/lsr/code/style3d_gen/_LSR/gen_data_list/output
 """

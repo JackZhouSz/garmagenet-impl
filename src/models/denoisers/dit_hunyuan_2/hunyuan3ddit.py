@@ -502,7 +502,10 @@ class HunyuanDiT(nn.Module):
             )
 
         self.latent_in = nn.Linear(self.in_channels, self.hidden_size, bias=True)
-        self.pos_in = MLPEmbedder(in_dim=self.pos_dim, hidden_dim=self.hidden_size)
+        if self.pos_dim>0:
+            self.pos_in = MLPEmbedder(in_dim=self.pos_dim, hidden_dim=self.hidden_size)
+        else:
+            self.pos_in = None
         self.time_in = MLPEmbedder(in_dim=256, hidden_dim=self.hidden_size)
         self.cond_in = nn.Linear(context_in_dim, self.hidden_size)
 
@@ -544,22 +547,27 @@ class HunyuanDiT(nn.Module):
 
         # Embedding in ===
         latent = self.latent_in(x)
-        pos_emb = self.pos_in(p)
-        latent = latent + pos_emb  # 位置编码直接加到latentcode上，参考了SD3
+
+        if self.pos_dim>0:
+            pos_emb = self.pos_in(p)
+            latent = latent + pos_emb  # 位置编码直接加到latentcode上，参考了SD3
 
         t_emb = self.time_in(timestep_embedding(t, 256, self.time_factor).to(dtype=latent.dtype))
         cond_emb = self.cond_in(cond)
 
-        # MM-DIT 用的mask需要额外加一个False，对应条件的token
-        assert attn_mask.shape[-1] == x.shape[1]
-        attn_mask_MM = torch.concat([torch.zeros((attn_mask.shape[0], 1)).to(attn_mask), attn_mask], dim=-1)
-        attn_mask_float = (~attn_mask_MM).float()  # False -> 1.0, True -> 0.0
-        attn_mask_float = attn_mask_float.masked_fill(attn_mask_MM, float('-inf'))  # True -> -inf
-        attn_mask_float = attn_mask_float.masked_fill(~attn_mask_MM, 0.0)  # False -> 0.0
-        # attn_mask_float 现在是：[[0.0, 0.0, -inf, -inf], [0.0, 0.0, 0.0, -inf]]
+        if attn_mask is not None:
+            # MM-DIT 用的mask需要额外加一个False，对应条件的token
+            assert attn_mask.shape[-1] == x.shape[1]
+            attn_mask_MM = torch.concat([torch.zeros((attn_mask.shape[0], 1)).to(attn_mask), attn_mask], dim=-1)
+            attn_mask_float = (~attn_mask_MM).float()  # False -> 1.0, True -> 0.0
+            attn_mask_float = attn_mask_float.masked_fill(attn_mask_MM, float('-inf'))  # True -> -inf
+            attn_mask_float = attn_mask_float.masked_fill(~attn_mask_MM, 0.0)  # False -> 0.0
+            # attn_mask_float 现在是：[[0.0, 0.0, -inf, -inf], [0.0, 0.0, 0.0, -inf]]
 
-        # 扩展为 [B, 1, 1, T]
-        attn_mask_float = attn_mask_float.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, T]
+            # 扩展为 [B, 1, 1, T]
+            attn_mask_float = attn_mask_float.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, T]
+        else:
+            attn_mask_float = None
 
         # Main model ===
         for block in self.double_blocks:

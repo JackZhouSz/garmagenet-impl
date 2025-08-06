@@ -13,9 +13,10 @@ from torchvision.utils import make_grid
 from matplotlib import pyplot as plt
 from matplotlib.colors import to_hex
 
-from src.network import AutoencoderKLFastDecode, SurfPosNet, TextEncoder, PointcloudEncoder, SketchEncoder
+from src.network import AutoencoderKLFastDecode, TextEncoder, PointcloudEncoder, SketchEncoder
 from diffusers import DDPMScheduler  # , PNDMScheduler
 from src.utils import randn_tensor, data_fields_dict
+from src.bbox_utils import bbox_deduplicate
 from src.vis import draw_bbox_geometry, draw_bbox_geometry_3D2D, get_visualization_steps
 
 import plotly.graph_objects as go
@@ -97,23 +98,23 @@ def _denormalize_pts(pts, bbox):
 def init_models(args):
 
     device = args.device
-
     block_dims = args.block_dims
     sample_size = args.reso
     latent_channels = args.latent_channels
     latent_size = sample_size//(2**(len(block_dims)-1))
 
-    surf_vae = AutoencoderKLFastDecode( in_channels=args.img_channels,
-                                    out_channels=args.img_channels,
-                                    down_block_types=['DownEncoderBlock2D']*len(block_dims),
-                                    up_block_types=['UpDecoderBlock2D']*len(block_dims),
-                                    block_out_channels=block_dims,
-                                    layers_per_block=2,
-                                    act_fn='silu',
-                                    latent_channels=latent_channels,
-                                    norm_num_groups=8,
-                                    sample_size=sample_size
-                                    )
+    surf_vae = AutoencoderKLFastDecode(
+        in_channels=args.img_channels,
+        out_channels=args.img_channels,
+        down_block_types=['DownEncoderBlock2D']*len(block_dims),
+        up_block_types=['UpDecoderBlock2D']*len(block_dims),
+        block_out_channels=block_dims,
+        layers_per_block=2,
+        act_fn='silu',
+        latent_channels=latent_channels,
+        norm_num_groups=8,
+        sample_size=sample_size
+    )
     surf_vae.load_state_dict(torch.load(args.vae), strict=False)
     surf_vae.to(device).eval()
 
@@ -133,6 +134,7 @@ def init_models(args):
     else: pointcloud_enc = None
     if args.sketch_encoder is not None: sketch_enc = SketchEncoder(args.sketch_encoder, device="cpu")
     else: sketch_enc = None
+
     # condition dimention
     if args.text_encoder is not None:
         condition_dim = text_enc.text_emb_dim
@@ -143,15 +145,28 @@ def init_models(args):
     else:
         condition_dim = -1
 
-    # Load SurfPos Net
-    surfpos_model = SurfPosNet(
-        p_dim=10,
-        condition_dim=condition_dim,
-        num_cf=-1
-    )
+    # Load SurfPos Net ===
+    if args.surfpos_type == 'default':
+        from src.network import SurfPosNet
+        surfpos_model = SurfPosNet(
+            p_dim=10,
+            condition_dim=condition_dim,
+            num_cf=-1
+        )
+    elif args.surfpos_type == 'hunyuan_dit':
+        from src.network import SurfPosNet_hunyuandit
+        surfpos_model = SurfPosNet_hunyuandit(
+            p_dim=10,
+            condition_dim=condition_dim,
+            num_cf=-1
+        )
+    else:
+        raise NotImplementedError
+    print(f"SurfPos LDM type: {args.surfpos_type}")
     surfpos_model.load_state_dict(torch.load(args.surfpos)['model_state_dict'])
     surfpos_model.to(device).eval()
 
+    # Load SurfZ Net ===
     if args.surfz_type == 'default':
         from src.network import SurfZNet
         surfz_model = SurfZNet(
@@ -176,7 +191,7 @@ def init_models(args):
             )
     else:
         raise NotImplementedError
-    print(f"LDM type: {args.surfz_type}")
+    print(f"SurfZ LDM type: {args.surfz_type}")
     surfz_model.load_state_dict(torch.load(args.surfz)['model_state_dict'])
     surfz_model.to(device).eval()
 
@@ -214,13 +229,13 @@ def inference_one(
     max_surf = 32
     device = args.device
 
-
+    # 保存去噪过程，预处理
     if save_denoising:
         assert surf_pos_orig is None and dedup
         denoising_dict = {}
         vis_steps = get_visualization_steps()
         denoising_dict["denoising_data"] = {k:{} for k in vis_steps}
-        denoising_dict["dedup_mask"] = np.zeros((max_surf), dtype=np.bool)  # 记录哪些BBox (为True的部分) 是被dedup掉的
+        dedup_mask = np.zeros((max_surf), dtype=np.bool)  # 记录哪些BBox (为True的部分) 是被dedup掉的
     else:
         denoising_dict = None
 
@@ -245,8 +260,8 @@ def inference_one(
     if condition_emb is not None:
         condition_emb = condition_emb.to(device)
 
-    # GET BBOX ---------------------------------------------------------------
-    # 如果不使用原有的BBox
+    # BBOX denoising ---------------------------------------------------------------
+    # 如果不使用原有的BBox ===
     if surf_pos_orig is None:
         # SurfPos Denoising
         surfPos = randn_tensor((batch_size, max_surf, 10)).to(device)
@@ -257,7 +272,7 @@ def inference_one(
                 pred = surfpos_model(surfPos, timesteps, condition=condition_emb)
                 surfPos = ddpm_scheduler.step(pred, t, surfPos).prev_sample
 
-                # 保存去噪过程
+                # 保存去噪过程中的一个阶段
                 if save_denoising:
                     if t.item() in denoising_dict["denoising_data"].keys():
                         denoising_dict["denoising_data"][t.item()]["surf_pos"] = surfPos.squeeze(0).detach().cpu().numpy()
@@ -276,7 +291,13 @@ def inference_one(
         #     fig_show="browser"
         # )
 
-        if dedup:
+        if dedup:  # 去除重复的BBOX
+            # bboxes, dedup_mask = bbox_deduplicate(surfPos, padding=args.padding)
+            # surf_mask = torch.zeros((1, len(bboxes))) == 1
+            # _surf_pos = torch.concat([torch.FloatTensor(bboxes), torch.zeros(max_surf - len(bboxes), 10)]).unsqueeze(0)
+            # _surf_mask = torch.concat([surf_mask, torch.zeros(1, max_surf - len(bboxes)) == 0], -1)
+            # n_surfs = torch.sum(~_surf_mask)
+
             if args.padding == "repeat":
                 bbox_threshold = 0.08
             elif args.padding == "zero":
@@ -307,20 +328,29 @@ def inference_one(
 
                 if args.padding=="zero":
                     # （2D）判断BBox的大小是否非0
+                    is_deduped = False
                     v = 1
                     for h in (bbox[1] - bbox[0])[3:]:
                         v *= h
                     if v < bbox_threshold:
                         is_deduped = True
-                    else:
-                        is_deduped = False
+                    # elif non_repeat is not None:  # 去重复的（zero padding 也有概率会产生重复）
+                    #     bbox_threshold_2 = 0.03
+                    #     diff = np.max(np.max(np.abs(non_repeat - bbox)[..., :3], -1), -1)  #
+                    #     same = diff < bbox_threshold_2
+                    #     bbox_rev = bbox[::-1]  # also test reverse bbox for matching
+                    #     diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., :3], -1), -1)  # [...,-2:]
+                    #     same_rev = diff_rev < bbox_threshold_2
+                    #     if same.sum() >= 1 or same_rev.sum() >= 1:
+                    #         is_deduped = True  # 当前BBox是否被去重了
+                    if is_deduped==False:
                         if non_repeat is None:
                             non_repeat = bbox[np.newaxis, :, :]
                         else:
                             non_repeat = np.concatenate([non_repeat, bbox[np.newaxis, :, :]], 0)
 
                 if save_denoising:
-                    denoising_dict["dedup_mask"][bbox_idx] = is_deduped
+                    dedup_mask = is_deduped
 
             bboxes = np.concatenate([non_repeat[:, :, :3].reshape(len(non_repeat), -1), non_repeat[:, :, 3:].reshape(len(non_repeat), -1)], axis=-1)
             surf_mask = torch.zeros((1, len(bboxes))) == 1
@@ -331,22 +361,21 @@ def inference_one(
             if save_denoising:
                 """
                 将同样的去重应用到去噪过程中保存的每一步中
-                然后保存
                 """
-                assert n_surfs == sum(~denoising_dict["dedup_mask"])
+                assert n_surfs == sum(~dedup_mask)
                 for step in denoising_dict["denoising_data"].keys():
                     denoising_dict["denoising_data"][step]["surf_pos"] = (
-                        denoising_dict["denoising_data"][step]["surf_pos"][~denoising_dict["dedup_mask"]])
-                del denoising_dict['dedup_mask']
+                        denoising_dict["denoising_data"][step]["surf_pos"][~dedup_mask])
+                # del denoising_dict['dedup_mask']
 
-    # 如果使用原有的BBox
+    # 如果使用原有的BBox ===
     else:
         n_surfs = torch.tensor(len(surf_pos_orig))
         surf_mask = torch.zeros((1, n_surfs)) == 1
         _surf_pos = torch.concat([surf_pos_orig, torch.zeros((max_surf - n_surfs, 10))]).to(device)
         _surf_mask = torch.concat([surf_mask, torch.zeros(1, max_surf - n_surfs) == 0], -1).to(device)
 
-    # SurfZ Denoising
+    # SurfZ Denoising ---------------------------------------------------------------
     _surf_z = randn_tensor((1, 32, latent_channels * latent_size * latent_size), device=device)
     ddpm_scheduler.set_timesteps(1000)
     with torch.no_grad():
@@ -364,7 +393,7 @@ def inference_one(
 
     _surf_z = _surf_z[:,:n_surfs]
 
-    # VAE Decoding
+    # VAE Decoding ------------------------------------------------------------------------
     with torch.no_grad(): decoded_surf_pos = surf_vae(_surf_z.view(-1, latent_channels, latent_size, latent_size))
     pred_img = make_grid(decoded_surf_pos, nrow=6, normalize=True, value_range=(-1,1))
 
@@ -410,8 +439,6 @@ def inference_one(
         # else: plt.show()
         # plt.close()
 
-    # plotly visualization
-    colormap = plt.cm.coolwarm
 
     # 根据 data_fields 从解码出的数据中拆分出各个图片 ===
     _surf_bbox = _surf_pos.squeeze(0)[~_surf_mask.squeeze(0), :].detach().cpu().numpy()
@@ -440,7 +467,9 @@ def inference_one(
     _surf_uv_bbox = _surf_bbox[..., 6:]
     _surf_bbox = _surf_bbox[..., :6]
 
+    # plotly visualization
     if vis:
+        colormap = plt.cm.coolwarm
         colors = [to_hex(colormap(i)) for i in np.linspace(0, 1, n_surfs)]
         _surf_wcs = _denormalize_pts(_surf_ncs, _surf_bbox)
         # _surf_uv_wcs = _denormalize_pts(_surf_uv_ncs, _surf_uv_bbox)
@@ -456,20 +485,21 @@ def inference_one(
             # show_num=True
             )
 
-    # 如果没有原本的路径data_fp, 尝试根据 data_id 找回 data_fp
-    if data_fp is None and data_id_trainval is not None:
-        try:
-            data_id_tr = os.path.basename(data_id_trainval)
-            data_id_tr = os.path.join("/data/AIGP/brep_reso_256_edge_snap_with_caption/", data_id_tr)
-            data_fp = pickle.load(open(data_id_tr, "rb"))["data_fp"]
-        except FileNotFoundError:
-            try:
-                data_id_tr = os.path.basename(data_id_trainval)
-                data_id_tr = os.path.join("/data/AIGP/Q4/", data_id_tr)
-                data_fp = pickle.load(open(data_id_tr, "rb"))["data_fp"]
-            except FileNotFoundError:
-                data_fp = None
-                print("Without data_fp")
+    # # data_id 在服务器上的路径变了后，不能找回data_fp了
+    # # 如果没有原本的路径data_fp, 尝试根据 data_id 找回 data_fp
+    # if data_fp is None and data_id_trainval is not None:
+    #     try:
+    #         data_id_tr = os.path.basename(data_id_trainval)
+    #         data_id_tr = os.path.join("/data/AIGP/brep_reso_256_edge_snap_with_caption/", data_id_tr)
+    #         data_fp = pickle.load(open(data_id_tr, "rb"))["data_fp"]
+    #     except FileNotFoundError:
+    #         try:
+    #             data_id_tr = os.path.basename(data_id_trainval)
+    #             data_id_tr = os.path.join("/data/AIGP/Q4/", data_id_tr)
+    #             data_fp = pickle.load(open(data_id_tr, "rb"))["data_fp"]
+    #         except FileNotFoundError:
+    #             data_fp = None
+    #             print("Without data_fp")
 
     result = {
         'surf_bbox': _surf_bbox,        # (N, 6)
@@ -479,11 +509,12 @@ def inference_one(
         'surf_mask': _surf_ncs_mask,    # (N, 256*256) => bool
         'caption': caption,             # str
         'data_fp': data_fp,
+        'data_id': data_id_trainval,
         'denoising': denoising_dict,
         'args': vars(args)
     }
 
-    # 如果点云condition，渲染个点云图
+    # 如果点云 condition，渲染个点云图
     if args.pointcloud_encoder is not None:
         pointcloud_condition_visualize(sampled_pc_cond, output_fp)
         result["sampled_pc_cond"] = sampled_pc_cond
@@ -574,11 +605,10 @@ if __name__ == "__main__":
         '--surfpos', type=str,
         default='/data/lsr/models/style3d_gen/surf_pos/stylexd_surfpos_xyzuv_pad_repeat_uncond/ckpts/surfpos_e3000.pt',
         help='Path to SurfZ model')
-    # todo
-    # parser.add_argument(
-    #     "--surfz_type", type=str,
-    #     choices=['default', 'hunyuan_dit'], default='default',
-    #     help="Choose ldm type.")
+    parser.add_argument(
+        "--surfpos_type", type=str,
+        choices=['default', 'hunyuan_dit'], default='default',
+        help="Choose ldm type.")
     parser.add_argument(
         '--surfz', type=str,
         default='/data/lsr/models/style3d_gen/surf_z/stylexd_surfz_xyzuv_mask_latent1_mode/ckpts/surfz_e230000.pt',
