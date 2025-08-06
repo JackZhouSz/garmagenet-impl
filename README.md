@@ -123,6 +123,14 @@ Training of the topology/geometry generators can run in parallel.
 
 
 
+
+
+------
+
+FOLLOWING ADD BY LSR
+
+
+
 ## Docker
 
 现在我使用的Image放在187的**/home/lsr/docker/images/style3d_gen.tar**，现有的容器在187、188、190三台机器上，名字包含**style_gen_lsr**的全都是。
@@ -134,14 +142,6 @@ docker run --gpus all --ipc=host -it -P -d --name <CONTAINER_NAME> \
     -v /data:/data \
     brep:lsr /bin/bash
 ```
-
-
-
-
-
-------
-
-FOLLOWING ADD BY LSR
 
 
 
