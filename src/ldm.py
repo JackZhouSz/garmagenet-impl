@@ -34,6 +34,8 @@ def get_args_ldm():
                         help="Choose between option [surfpos,edgepos,surfz,edgez] (default: surfpos)")
     parser.add_argument("--denoiser_type", type=str, choices=['default', 'hunyuan_dit'], default='default',
                         help="Choose ldm type.")
+    parser.add_argument('--lr', type=float, default=5e-4, help='')
+    parser.add_argument('--device', type=str, default=None, help='')
     parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
 
     # Training parameters
@@ -81,7 +83,15 @@ def get_args_ldm():
 
 
 def run(args):
-    
+
+    # catch fault ===
+    if True:
+        import faulthandler
+        # faulthandler.enable()
+        faulthandler.enable(all_threads=True)
+        # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # 强制同步 CUDA 报错
+        # os.environ['TORCH_USE_CUDA_DSA'] = '1'  # CUDA Dynamic Safety Analysis（PyTorch >= 2.0）
+
     # datamodule = getattr(datasets, args.datasets)
     
     # Initialize dataset and trainer

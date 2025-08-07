@@ -423,6 +423,7 @@ python src/experiments/batch_inference/batch_inference.py \
 
 ### HunyuanDit batch inference Q124 sketchCond
 
+**使用DDPM的：**
 ```bash
 # run on 192.168.31.188
 cd /data/lsr/code/style3d_gen
@@ -437,3 +438,19 @@ python src/experiments/batch_inference/batch_inference.py \
     --padding zero  # --save_denoising [optional]
 ```
 
+**使用flow matching的scheduler (参考)：**
+```bash
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed --device cuda --lr 5e-5\
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz --denoiser_type hunyuan_dit \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/ckpts/vae_e0850.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/cache/vae_e0850_stylexdQ1Q2Q4_surfz_HYdit_Layer_10_12_emb768_xyz_mask_pad_zero_sketchCond_latent_16_16_1_scheduler_HY_FMED_shift3/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_HYdit_Layer_5_15_emb768_xyz_mask_pad_zero_sketchCond_latent_16_16_1_scheduler_HY_FMED_shift5_lr5e-5 --train_nepoch 100000 --test_nepoch 200 --save_nepoch 500 \
+    --batch_size 100 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --embed_dim 768 --num_layer 5 15 \
+    --scheduler HY_FMED --scheduler_shift 5 \
+    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
+    --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+```
