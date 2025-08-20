@@ -309,6 +309,9 @@ def sample(eval_args, out_dir, vis=True, dedup=True):
 
 
 if __name__ == "__main__":
+    raise Exception("This file is not used anymore.")
+
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, choices=['abc', 'deepcad', 'furniture', 'sxd'], default='sxd',
                         help="Choose between evaluation mode [abc/deepcad/furniture] (default: abc)")

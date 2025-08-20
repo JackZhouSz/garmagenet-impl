@@ -14,9 +14,11 @@ import argparse
 
 from torch.utils.data import random_split
 
+
 def keep_percentage(lst, r):
     n = max(1, int(len(lst) * r))  # 至少保留1个元素，防止为空
     return random.sample(lst, n)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

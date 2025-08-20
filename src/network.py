@@ -706,11 +706,7 @@ class SurfZNet(nn.Module):
         output = self.net(
             src=tokens.permute(1,0,2),
             src_key_padding_mask=surf_mask,
-        ).transpose(0,1) 
-        
-        # print('[SurfZNet] token', tokens.size(), tokens.min(), tokens.max())
-        # print('[SurfZNet] mask', surf_mask.size(), surf_mask.sum(dim=1).min(), surf_mask.sum(dim=1).max())
-        # print('[SurfZNet] output', output.size(), output.min(), output.max())
+        ).transpose(0,1)
 
         pred = self.fc_out(output)
         return pred

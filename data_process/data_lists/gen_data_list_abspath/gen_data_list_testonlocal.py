@@ -5,11 +5,11 @@
 import os
 import pickle
 import random
-from tqdm import tqdm
-from glob import glob
 import argparse
+from glob import glob
 
 from torch.utils.data import random_split
+
 
 def keep_percentage(lst, r):
     n = max(1, int(len(lst) * r))  # 至少保留1个元素，防止为空

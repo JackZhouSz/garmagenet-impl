@@ -3,18 +3,13 @@
 """
 
 import os
-import random
-from glob import glob
 
 import numpy as np
-import pickle
-
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
 from PIL import Image
 from matplotlib.colors import to_rgb
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-import gc
 
 _CMAP = {
     "帽": {"alias": "帽", "color": "#F7815D"},

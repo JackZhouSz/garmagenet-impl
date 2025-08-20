@@ -395,9 +395,12 @@ def inference_one(
 
     # VAE Decoding ------------------------------------------------------------------------
     with torch.no_grad(): decoded_surf_pos = surf_vae(_surf_z.view(-1, latent_channels, latent_size, latent_size))
-    pred_img = make_grid(decoded_surf_pos, nrow=6, normalize=True, value_range=(-1,1))
 
+    # [todo] 如果有两个板片基本重合，则筛掉一个
+
+    # save vis garmage channel-wise
     if vis:
+        pred_img = make_grid(decoded_surf_pos, nrow=6, normalize=True, value_range=(-1,1))
         fig, ax = plt.subplots(len(args.data_fields), 1, figsize=(40, 40))
 
         current_channel = 0
@@ -440,7 +443,7 @@ def inference_one(
         # plt.close()
 
 
-    # 根据 data_fields 从解码出的数据中拆分出各个图片 ===
+    # pharse Garmage by data_fields
     _surf_bbox = _surf_pos.squeeze(0)[~_surf_mask.squeeze(0), :].detach().cpu().numpy()
     _decoded_surf = decoded_surf_pos.permute(0, 2, 3, 1).detach().cpu().numpy()
 
@@ -464,6 +467,7 @@ def inference_one(
     # _surf_uv_ncs = _decoded_surf[..., 3:5].reshape(n_surfs, -1, 2)
     # _surf_ncs_mask = _decoded_surf[..., -1:].reshape(n_surfs, -1) > 0.0
 
+    # [todo] 将以下部分也改成上面那种
     _surf_uv_bbox = _surf_bbox[..., 6:]
     _surf_bbox = _surf_bbox[..., :6]
 
@@ -485,7 +489,7 @@ def inference_one(
             # show_num=True
             )
 
-    # # data_id 在服务器上的路径变了后，不能找回data_fp了
+    # 以下代码已经失效，因为：data_id 在服务器上的路径变了后，不能找回data_fp了
     # # 如果没有原本的路径data_fp, 尝试根据 data_id 找回 data_fp
     # if data_fp is None and data_id_trainval is not None:
     #     try:

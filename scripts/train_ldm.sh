@@ -1,46 +1,41 @@
 #!/bin/bash\
 
 ### Train the Latent Diffusion Model ###
-# --data_aug is optional
-# max_face 30, max_edge 20 for deepcad 
-# max_face 50, max_edge 30 for abc/furniture
-# --surfvae refer to the surface vae weights 
-# --edgevae refer to the edge vae weights
 
-
-# 训一版试试 ===
+# Revision需要点云拆板实验，因此需要重新训练一版 ===
+# zero padding xyz uv mask Q1-4 pcCond_uniform ===
+# POS Bsize 182:1230
 cd /data/lsr/code/style3d_gen
 export PYTHONPATH=/data/lsr/code/style3d_gen
-python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed --device cuda --lr 5e-5\
-    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz --denoiser_type hunyuan_dit \
-    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/ckpts/vae_e0850.pt \
-    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/cache/vae_e0850_stylexdQ1Q2Q4_surfz_HYdit_Layer_10_12_emb768_xyz_mask_pad_zero_sketchCond_latent_16_16_1_scheduler_HY_FMED_shift3/encoder_mode \
-    --expr stylexdQ1Q2Q4_surfz_HYdit_Layer_5_15_emb768_xyz_mask_pad_zero_sketchCond_latent_16_16_1_scheduler_HY_FMED_shift5_lr5e-5 --train_nepoch 100000 --test_nepoch 200 --save_nepoch 500 \
-    --batch_size 100 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
-    --block_dims 16 32 32 64 64 --latent_channels 1 --max_face 32 --sample_mode mode \
-    --embed_dim 768 --num_layer 5 15 \
-    --scheduler HY_FMED --scheduler_shift 5 \
-    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
-    --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_uniform/encoder_mode \
+    --padding zero \
+    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_pcCond_uniform --train_nepoch 100000 --test_nepoch 1000 --save_nepoch 1000 \
+    --batch_size 1640 --max_face 32 --bbox_scaled 1.0 \
+    --pointcloud_encoder POINT_E --pointcloud_sampled_dir /data/AIGP/pc_cond_sample/uniform_2048 \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
 
-# 用于测试为啥 segment fault ===
+# Z Bsize 188:1230
+# 最初在187上跑，训练了数个小时后突然无法运行了，转到188训练
 cd /data/lsr/code/style3d_gen
 export PYTHONPATH=/data/lsr/code/style3d_gen
-python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed --device cuda \
-    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz --denoiser_type hunyuan_dit \
-    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/ckpts/vae_e0850.pt \
-    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_mask_unet6_latent_16_16_1/cache/vae_e0850_stylexdQ1Q2Q4_surfz_HYdit_Layer_10_12_emb768_xyz_mask_pad_zero_sketchCond_latent_16_16_1_scheduler_HY_FMED_shift3/encoder_mode \
-    --expr stylexdQ1Q2Q4_surfz_HYdit_Layer_10_12_emb768_xyz_mask_pad_zero_sketchCond_latent_16_16_1_scheduler_HY_FMED_shift3 --train_nepoch 100000 --test_nepoch 200 --save_nepoch 500 \
-    --batch_size 100 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
-    --block_dims 16 32 32 64 64 --latent_channels 1 --max_face 32 --sample_mode mode \
-    --embed_dim 768 --num_layer 15 30 \
-    --scheduler HY_FMED --scheduler_shift 3 \
-    --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
-    --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_uniform/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_pcCond_uniform --train_nepoch 100000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 1230 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --pointcloud_encoder POINT_E --pointcloud_sampled_dir /data/AIGP/pc_cond_sample/uniform_2048 \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+
+
 
 
 
 # DIT Z  scheduler 用 hunyuan 的 FlowMatchEulerDiscreteScheduler ===
+cd /data/lsr/code/style3d_gen
 export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed --device cuda:1\
     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz --denoiser_type hunyuan_dit \
@@ -68,6 +63,7 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/process
     --embed_dim 384 --num_layer 2 6 \
     --sketch_encoder LAION2B --sketch_feature_dir /data/AIGP/feature_laion2b \
     --data_fields surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
+
 # layer 2+6  embed_dim 384 repeat padding
 # 188: 1650
 cd /data/lsr/code/style3d_gen

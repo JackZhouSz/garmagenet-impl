@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import numpy as np
 
@@ -191,7 +190,6 @@ def bbox_2d_iou(pred_bboxes, gt_bboxes):
     # IoU
     iou_2d = np.where(union_area > 0, inter_area / union_area, 0.0)
     return iou_2d
-
 
 
 def evaluate_bboxes_iou(pred_bboxes, gt_bboxes, indices_2d=[6, 7, 8, 9]):

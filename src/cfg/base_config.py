@@ -1,10 +1,12 @@
 from yacs.config import CfgNode as CN
 
+
 def get_cfg_main():
     cfg = CN()
     cfg.OUTPUT_DIR = "./output"
     cfg.DEVICE = "cuda"
     return cfg
+
 
 def get_cfg_dataset():
     cfg = CN()
@@ -13,6 +15,7 @@ def get_cfg_dataset():
     cfg.DATASET.ROOT = "./data"
     cfg.DATASET.BATCH_SIZE = 32
     return cfg
+
 
 def get_VAE_cfg(cfg_fp=None):
     cn = CN()
@@ -27,7 +30,6 @@ def get_VAE_cfg(cfg_fp=None):
         cn.merge_from_file(cfg_fp)
 
     return cn
-
 
 
 # def load_cfg(main_yaml, dataset_yaml, model_yaml):
@@ -46,6 +48,7 @@ def get_VAE_cfg(cfg_fp=None):
 #     cfg.merge_from_file(main_yaml)
 #
 #     return cfg
+
 
 if __name__ == "__main__":
     vae_cfg = get_VAE_cfg()

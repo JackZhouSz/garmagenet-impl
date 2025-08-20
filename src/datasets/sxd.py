@@ -1,57 +1,48 @@
 import os
-# import math
-# import random
 import pickle
-import torch
-import numpy as np
+import random
 from tqdm import tqdm
 from glob import glob
-import random
+
+import torch
+import numpy as np
+
 from src.network import PointcloudEncoder
-# from multiprocessing.pool import Pool
-# from utils import (
-#     rotate_point_cloud,
-#     bbox_corners,
-#     rotate_axis,
-#     get_bbox,
-#     pad_repeat,
-#     pad_zero,
-# )
 
-# furniture class labels
-_CMAP = {
-    "帽": {"alias": "帽", "color": "#F7815D"},
-    "领": {"alias": "领", "color": "#F9D26D"},
-    "肩": {"alias": "肩", "color": "#F23434"},
-    "袖片": {"alias": "袖片", "color": "#C4DBBE"},
-    "袖口": {"alias": "袖口", "color": "#F0EDA8"},
-    "衣身前中": {"alias": "衣身前中", "color": "#8CA740"},
-    "衣身后中": {"alias": "衣身后中", "color": "#4087A7"},
-    "衣身侧": {"alias": "衣身侧", "color": "#DF7D7E"},
-    "底摆": {"alias": "底摆", "color": "#DACBBD"},
-    "腰头": {"alias": "腰头", "color": "#DABDD1"},
-    "裙前中": {"alias": "裙前中", "color": "#46B974"},
-    "裙后中": {"alias": "裙后中", "color": "#6B68F5"},
-    "裙侧": {"alias": "裙侧", "color": "#D37F50"},
 
-    "橡筋": {"alias": "橡筋", "color": "#696969"},
-    "木耳边": {"alias": "木耳边", "color": "#A8D4D2"},
-    "袖笼拼条": {"alias": "袖笼拼条", "color": "#696969"},
-    "荷叶边": {"alias": "荷叶边", "color": "#A8D4D2"},
-    "绑带": {"alias": "绑带", "color": "#696969"},
-}
-
-_CMAP_LINE = {
-    "领窝线": {"alias": "领窝线", "color": "#8000FF"},
-    "袖笼弧线": {"alias": "袖笼弧线", "color": "#00B5EB"},      # interfaces between sleeve panels and bodice panels (belongs to bodice panels)
-    "袖山弧线": {"alias": "袖山弧线", "color": "#00B5EB"},      # interfaces between sleeve panels and bodice panels (belongs to sleeve panels)
-    "腰线": {"alias": "腰线", "color": "#80FFB4"},
-    "袖口线": {"alias": "袖口线", "color": "#FFB360"},
-    "底摆线": {"alias": "底摆线", "color": "#FF0000"},
-
-    "省": {"alias": "省道", "color": "#FF3333"},
-    "褶": {"alias": "褶", "color": "#33FF33"},
-}
+# _CMAP = {
+#     "帽": {"alias": "帽", "color": "#F7815D"},
+#     "领": {"alias": "领", "color": "#F9D26D"},
+#     "肩": {"alias": "肩", "color": "#F23434"},
+#     "袖片": {"alias": "袖片", "color": "#C4DBBE"},
+#     "袖口": {"alias": "袖口", "color": "#F0EDA8"},
+#     "衣身前中": {"alias": "衣身前中", "color": "#8CA740"},
+#     "衣身后中": {"alias": "衣身后中", "color": "#4087A7"},
+#     "衣身侧": {"alias": "衣身侧", "color": "#DF7D7E"},
+#     "底摆": {"alias": "底摆", "color": "#DACBBD"},
+#     "腰头": {"alias": "腰头", "color": "#DABDD1"},
+#     "裙前中": {"alias": "裙前中", "color": "#46B974"},
+#     "裙后中": {"alias": "裙后中", "color": "#6B68F5"},
+#     "裙侧": {"alias": "裙侧", "color": "#D37F50"},
+#
+#     "橡筋": {"alias": "橡筋", "color": "#696969"},
+#     "木耳边": {"alias": "木耳边", "color": "#A8D4D2"},
+#     "袖笼拼条": {"alias": "袖笼拼条", "color": "#696969"},
+#     "荷叶边": {"alias": "荷叶边", "color": "#A8D4D2"},
+#     "绑带": {"alias": "绑带", "color": "#696969"},
+# }
+#
+# _CMAP_LINE = {
+#     "领窝线": {"alias": "领窝线", "color": "#8000FF"},
+#     "袖笼弧线": {"alias": "袖笼弧线", "color": "#00B5EB"},      # interfaces between sleeve panels and bodice panels (belongs to bodice panels)
+#     "袖山弧线": {"alias": "袖山弧线", "color": "#00B5EB"},      # interfaces between sleeve panels and bodice panels (belongs to sleeve panels)
+#     "腰线": {"alias": "腰线", "color": "#80FFB4"},
+#     "袖口线": {"alias": "袖口线", "color": "#FFB360"},
+#     "底摆线": {"alias": "底摆线", "color": "#FF0000"},
+#
+#     "省": {"alias": "省道", "color": "#FF3333"},
+#     "褶": {"alias": "褶", "color": "#33FF33"},
+# }
 
 _PANEL_CLS = [
     '帽', '领', '肩', '袖片', '袖口', '衣身前中', '衣身后中', '衣身侧', '底摆', '腰头',
@@ -66,6 +57,18 @@ def _bbox_to_offset_scale(bbox):
     scale = (bbox_max - bbox_min) * 0.5
 
     return np.concatenate([offset, scale], axis=-1)
+
+
+def pharse_data_fp(data_fp):
+    data_fp = data_fp.replace("\\", "/")
+    if "Q1" in data_fp or "Q2" in data_fp:
+        data_fp = data_fp.split("工程数据")[1]
+        data_fp = data_fp.replace("/objs/", "/")
+    elif "Q4" in data_fp:
+        # print(f"data_fp: {data_fp}")
+        data_fp = data_fp.split("工程数据")[1]
+        data_fp = data_fp.replace("_objs", "")
+    return data_fp
 
 
 class SurfData(torch.utils.data.Dataset):
@@ -185,6 +188,9 @@ class SurfPosData(torch.utils.data.Dataset):
         if "pointcloud_feature" in self.data_fields:
             print("Use Pointcloud feature.")
             self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, "cuda")
+            self.pointcloud_sampled_dir = args.pointcloud_sampled_dir
+            if not os.path.exists(self.pointcloud_sampled_dir):
+                raise FileNotFoundError("pointcloud_sampled_dir not exists")
 
         if "sketch_feature" in self.data_fields:
             print("Use Sketch feature.")
@@ -197,7 +203,6 @@ class SurfPosData(torch.utils.data.Dataset):
             self.num_classes = len(_PANEL_CLS) + 1 if 'surf_cls' in self.data_fields else 0
             print('Load cache from %s: '%self.cache_fp, self.cache.keys())
             print(f'POS_DIM = {self.pos_dim};\t NUM_CLASSED = {self.num_classes}.')
-
         else:
             print('Loading %s data...'%('validation' if validate else 'training'))
             with open(input_list, 'rb') as f:
@@ -213,47 +218,43 @@ class SurfPosData(torch.utils.data.Dataset):
 
 
     def __load_one__(self, data_fp):
-        data_dict = {}
         with open(data_fp, 'rb') as f: data = pickle.load(f)
-
         # Load surfpos
         surf_pos = []
         if 'surf_bbox_wcs' in self.data_fields: surf_pos.append(data['surf_bbox_wcs'].astype(np.float32))
         if 'surf_uv_bbox_wcs' in self.data_fields: surf_pos.append(data['surf_uv_bbox_wcs'].astype(np.float32))
         surf_pos = np.concatenate(surf_pos, axis=-1)
 
-        # Load semantics
-        surf_cls = data['surf_cls'][..., None] if 'surf_cls' in self.data_fields \
-            else np.zeros((self.max_face, 1)) - 1
-
         # Load caption
         caption = data['caption'] if 'caption' in self.data_fields else ''
 
         # Load pointcloud feature
         if 'pointcloud_feature' in self.data_fields:
-            n_surfs = len(data['surf_bbox_wcs'])
-            surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
-            surf_mask = data["surf_mask"].reshape(n_surfs, -1)
-            # sample some points, extract feature
-            valid_pts = surf_wcs[surf_mask]
-            sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            # 如果没有提前准备采样的点云（来自obj的均匀点云采样），则直接从GT garmage采样点云
+            if self.pointcloud_sampled_dir is None:
+                n_surfs = len(data['surf_bbox_wcs'])
+                surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
+                surf_mask = data["surf_mask"].reshape(n_surfs, -1)
+                valid_pts = surf_wcs[surf_mask]
+                sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            # 使用提前准备的采样的点云（sampled by: data_process/prepare_pc_cond_sample/prepare_pc_cond_sample.py）
+            else:
+                data_fp = pharse_data_fp(data["data_fp"])
+                pointcloud_sample_fp = sorted(glob(os.path.join(os.path.join(self.pointcloud_sampled_dir, data_fp), "*.npy")))
+                if len(pointcloud_sample_fp) == 0:
+                    raise FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} 不存在.")
+                else:
+                    pointcloud_sample_fp = pointcloud_sample_fp[0]
+                sampled_pc_cond = np.load(pointcloud_sample_fp)
             pointcloud_feature = self.pointcloud_encoder(sampled_pc_cond)
 
         # Load sketch feature
         if "sketch_feature" in self.data_fields:
             if 'sketch_feature' not in data or data['sketch_feature'] is None:
-                data_fp = data["data_fp"]
-                data_fp = data_fp.replace("\\", "/")
-                if "Q1" in data_fp or "Q2" in data_fp:
-                    data_fp = data_fp.split("工程数据")[1]
-                    data_fp = data_fp.replace("/objs/", "/")
-                elif "Q4" in data_fp:
-                    # print(f"data_fp: {data_fp}")
-                    data_fp = data_fp.split("工程数据")[1]
-                    data_fp = data_fp.replace("_objs", "")
+                data_fp = pharse_data_fp(data["data_fp"])
                 sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
                 if len(sketch_feature_fp) == 0:
-                    raise FileExistsError(f"sketch_feature_fp: {sketch_feature_fp} 不存在，可能是因为没有做对应衣服的多视角图")
+                    raise FileExistsError(f"sketch_feature_fp: {sketch_feature_fp} 不存在，可能是因为没有做对应衣服的多视角图.")
                 else:
                     sketch_feature_fp = sketch_feature_fp[0]
                 sketch_feature = np.load(sketch_feature_fp)
@@ -262,6 +263,10 @@ class SurfPosData(torch.utils.data.Dataset):
 
             if sketch_feature.ndim == 1:
                 sketch_feature = sketch_feature[np.newaxis, ...]
+
+        # Load semantics
+        surf_cls = data['surf_cls'][..., None] if 'surf_cls' in self.data_fields \
+            else np.zeros((self.max_face, 1)) - 1
 
         if not hasattr(self, 'pos_dim'): self.pos_dim = surf_pos.shape[-1] // 2
         if not hasattr(self, 'num_classes'): self.num_classes = len(_PANEL_CLS) if 'surf_cls' in self.data_fields else 0
@@ -394,6 +399,8 @@ class SurfZData(torch.utils.data.Dataset):
             args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('log', 'cache'),
             'surfz_%s.pkl'%('validate' if validate else 'train')
         )
+        # [test]
+        print("dataset init ")
 
         self.data_fields = args.data_fields
         self.padding = args.padding
@@ -401,6 +408,9 @@ class SurfZData(torch.utils.data.Dataset):
         if "pointcloud_feature" in self.data_fields:
             print("Use Pointcloud feature.")
             self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, "cuda")
+            self.pointcloud_sampled_dir = args.pointcloud_sampled_dir
+            if not os.path.exists(self.pointcloud_sampled_dir):
+                raise FileNotFoundError("pointcloud_sampled_dir not exists")
 
         if "sketch_feature" in self.data_fields:
             print("Use Sketch feature.")
@@ -426,7 +436,6 @@ class SurfZData(torch.utils.data.Dataset):
 
         else:
             self.__load_one__(os.path.join(self.data_root, self.data_list[0]))
-
 
     def __len__(self):
         # return len(self.data_list) * 5 if not self.validate else len(self.data_chunks[self.chunk_idx])
@@ -457,7 +466,6 @@ class SurfZData(torch.utils.data.Dataset):
         print('Init zero latent: ', self.zero_latent.shape,self.zero_latent.min(), self.zero_latent.max(), self.zero_latent.mean(), self.zero_latent.std())
 
     def __load_one__(self, data_fp):
-
         with open(data_fp, 'rb') as f: data = pickle.load(f)
         # Load surfpos
         surf_pos = []
@@ -468,30 +476,39 @@ class SurfZData(torch.utils.data.Dataset):
         # Load surfncs
         surf_ncs = []
         if 'surf_ncs' in self.data_fields: surf_ncs.append(data['surf_ncs'].astype(np.float32))
+        if 'surf_wcs' in self.data_fields: surf_ncs.append(data['surf_wcs'].astype(np.float32))
         if 'surf_uv_ncs' in self.data_fields: surf_ncs.append(data['surf_uv_ncs'].astype(np.float32))
+        if 'surf_normals' in self.data_fields: surf_ncs.append(data['surf_normals'].astype(np.float32))
         if 'surf_mask' in self.data_fields: surf_ncs.append(data['surf_mask'].astype(np.float32)*2.0-1.0)
         surf_ncs = np.concatenate(surf_ncs, axis=-1)
 
+        # Load caption
+        caption = data['caption'] if 'caption' in self.data_fields else ''
+
         # Load pointcloud feature
         if 'pointcloud_feature' in self.data_fields:
-            n_surfs = len(data['surf_bbox_wcs'])
-            surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
-            surf_mask = data["surf_mask"].reshape(n_surfs, -1)
-            valid_pts = surf_wcs[surf_mask]
-            sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            # 如果没有提前准备采样的点云（来自obj的均匀点云采样），则直接从GT garmage采样点云
+            if self.pointcloud_sampled_dir is None:
+                n_surfs = len(data['surf_bbox_wcs'])
+                surf_wcs = data["surf_wcs"].reshape(n_surfs, -1, 3)
+                surf_mask = data["surf_mask"].reshape(n_surfs, -1)
+                valid_pts = surf_wcs[surf_mask]
+                sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
+            # 使用提前准备的采样的点云（sampled by: data_process/prepare_pc_cond_sample/prepare_pc_cond_sample.py）
+            else:
+                data_fp = pharse_data_fp(data["data_fp"])
+                pointcloud_sample_fp = sorted(glob(os.path.join(os.path.join(self.pointcloud_sampled_dir, data_fp), "*.npy")))
+                if len(pointcloud_sample_fp) == 0:
+                    raise FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} 不存在.")
+                else:
+                    pointcloud_sample_fp = pointcloud_sample_fp[0]
+                sampled_pc_cond = np.load(pointcloud_sample_fp)
             pointcloud_feature = self.pointcloud_encoder(sampled_pc_cond)
+
         # Load sketch feature
         if "sketch_feature" in self.data_fields:
             if 'sketch_feature' not in data or data['sketch_feature'] is None:
-                data_fp = data["data_fp"]
-                data_fp = data_fp.replace("\\", "/")
-                if "Q1" in data_fp or "Q2" in data_fp:
-                    data_fp = data_fp.split("工程数据")[1]
-                    data_fp = data_fp.replace("/objs/", "/")
-                elif "Q4" in data_fp:
-                    # print(f"data_fp: {data_fp}")
-                    data_fp = data_fp.split("工程数据")[1]
-                    data_fp = data_fp.replace("_objs", "")
+                data_fp = pharse_data_fp(data["data_fp"])
                 sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
                 if len(sketch_feature_fp) == 0:
                     raise FileExistsError(f"sketch_feature_fp: {sketch_feature_fp} 不存在，可能是因为没有做对应衣服的多视角图")
@@ -507,9 +524,6 @@ class SurfZData(torch.utils.data.Dataset):
         # Load semantics
         surf_cls = data['surf_cls'][..., None] if 'surf_cls' in self.data_fields \
             else np.zeros((self.max_face, 1)) - 1
-
-        # Load caption
-        caption = data['caption'] if 'caption' in self.data_fields else ''
 
         if not hasattr(self, 'num_channels'): self.num_channels = surf_ncs.shape[-1]
         if not hasattr(self, 'resolution'): self.resolution = surf_ncs.shape[1]
@@ -799,7 +813,6 @@ class SurfZData(torch.utils.data.Dataset):
         return (
             surf_pos, surf_latents, pad_mask, surf_cls, caption, pointcloud_feature, sketch_feature
         )
-
 
 class SurfInpaintingData(torch.utils.data.Dataset):
     """ Surface latent geometry Dataloader """

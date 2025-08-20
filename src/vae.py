@@ -1,5 +1,4 @@
 import os
-
 import argparse
 
 from trainer import SurfVAETrainer

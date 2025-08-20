@@ -1,20 +1,18 @@
 import os
-
-import numpy as np
 from tqdm import tqdm
 
 import torch
-import wandb
 from torchvision.utils import make_grid
 from diffusers import AutoencoderKL, DDPMScheduler
+import wandb
+import numpy as np
 
 from src.network import *
 from src.cfg import get_VAE_cfg
 from src.utils import get_wandb_logging_meta
-
 from src.bbox_utils import bbox_deduplicate
 from src.bbox_utils import get_diff_map, bbox_2d_iou, bbox_3d_iou, bbox_l2_distance
-import torch.distributed as dist
+
 
 class SurfVAETrainer():
     """ Surface VAE Trainer """
@@ -64,7 +62,7 @@ class SurfVAETrainer():
         self.network_params = list(self.model.parameters())
         self.optimizer = torch.optim.AdamW(
             self.network_params,
-            lr=5e-4,
+            lr=args.lr,
             weight_decay=1e-5
         )
         self.scaler = torch.cuda.amp.GradScaler()
@@ -142,13 +140,14 @@ class SurfVAETrainer():
             self.iters += 1
             progress_bar.update(1)
 
-        torch.cuda.empty_cache()
         progress_bar.close()
 
         # update train dataset
         self.train_dataset.update()
         self.train_dataloader = torch.utils.data.DataLoader(
             self.train_dataset, shuffle=True, batch_size=self.batch_size, num_workers=8)
+
+        torch.cuda.empty_cache()
         self.epoch += 1
 
     def test_val(self):
@@ -244,10 +243,11 @@ class SurfPosTrainer():
         self.epoch = 0
         self.log_dir = args.log_dir
 
-        if args.device == None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if args.gpu is not None:    # [todo]
+            self.device_ids = args.gpu
         else:
-            self.device = args.device
+            self.device_ids = None
 
         self.bbox_scaled = args.bbox_scaled
 
@@ -292,10 +292,15 @@ class SurfPosTrainer():
             else: model.load_state_dict(state_dict)
             print('Load SurfZNet checkpoint from %s.'%(args.weight))
 
-        model = model.to(self.device)
-        if args.batch_size > 1:
-            model = nn.DataParallel(model)  # distributed training
-        self.model = model.train()
+        # model = model.to(self.device)
+        # if args.batch_size > 1:
+        #     model = nn.DataParallel(model)  # distributed training
+        # self.model = model.train()
+
+        model = nn.DataParallel(model, device_ids=self.device_ids) # distributed training
+        self.model = model.to(self.device).train()
+
+        self.device = self.model.module.parameters().__next__().device
 
         self.loss_fn = nn.MSELoss()
 
@@ -314,7 +319,7 @@ class SurfPosTrainer():
 
         self.optimizer = torch.optim.AdamW(
             self.network_params,
-            lr=5e-4,
+            lr=args.lr,
             betas=(0.95, 0.999),
             weight_decay=1e-6,
             eps=1e-08,
@@ -410,9 +415,9 @@ class SurfPosTrainer():
             self.iters += 1
             progress_bar.update(1)
 
-        torch.cuda.empty_cache()
         progress_bar.close()
         self.epoch += 1
+        torch.cuda.empty_cache()
         return
 
     def point_l2_error(self, pred_box, gt_box):
@@ -432,7 +437,8 @@ class SurfPosTrainer():
         # evaluate stepwise ===
         total_count = 0
         mse_loss = nn.MSELoss(reduction='none')
-        total_loss_mse = [0,0,0,0,0]
+        val_timesteps = [10, 50, 100, 200, 500, 1000]
+        total_loss_mse = [0] * len(val_timesteps)
 
         # evaluate step-wise MSE ===
         print("Evaluating step-wise.")
@@ -455,9 +461,6 @@ class SurfPosTrainer():
                 condition_emb = None
             if condition_emb is not None:
                 condition_emb = condition_emb.to(self.device)
-
-            val_timesteps = [10,50,100,200,500,1000]
-            total_loss_mse = [0]*len(val_timesteps)
 
             for idx, step in enumerate(val_timesteps):
                 # Evaluate at timestep
@@ -598,13 +601,15 @@ class SurfPosTrainer():
                 "bbox_IoU_2D": bbox_IoU_2D,
             },
             step=self.iters)
+
+        torch.cuda.empty_cache()
         return
 
     def save_model(self):
         ckpt_log_dir = os.path.join(self.log_dir, 'ckpts')
         os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save({
-            'model_state_dict': self.model.module.state_dict(),
+            'model_state_dict': self.model.module.state_dict() if hasattr(self.model, "module") else self.model.state_dict(),
             'bbox_scaled': self.bbox_scaled
         }, os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:04d}.pt'))
         return
@@ -621,10 +626,13 @@ class SurfZTrainer():
         self.z_scaled = args.z_scaled
         self.bbox_scaled = args.bbox_scaled
 
-        if args.device == None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if args.gpu is not None:
+            self.device_ids = args.gpu
         else:
-            self.device = args.device
+            self.device_ids = None
+
 
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -658,12 +666,8 @@ class SurfZTrainer():
         )
 
         surf_vae_encoder.load_state_dict(torch.load(args.surfvae), strict=False)
-        surf_vae_encoder = surf_vae_encoder.to(self.device)
-        if args.batch_size > 1:
-            surf_vae_encoder = nn.DataParallel(surf_vae_encoder) # distributed inference
-
-        # self.surf_vae_encoder = surf_vae_encoder.to(self.device).eval()
-        self.surf_vae_encoder = surf_vae_encoder.eval()
+        surf_vae_encoder = nn.DataParallel(surf_vae_encoder, device_ids=self.device_ids) # distributed inference
+        self.surf_vae_encoder = surf_vae_encoder.to(self.device).eval()
 
         print('[DONE] Init parallel surface vae encoder.')
 
@@ -708,13 +712,10 @@ class SurfZTrainer():
             else: model.load_state_dict(state_dict)
             print('Load SurfZNet checkpoint from %s.'%(args.weight))
 
-        model = model.to(self.device)
-        if args.batch_size > 1:
-            model = nn.DataParallel(model)  # distributed training
-        # self.model = model.to(self.device).train()
-        self.model = model.train()
+        model = nn.DataParallel(model, device_ids=self.device_ids) # distributed training
+        self.model = model.to(self.device).train()
 
-        # self.device = self.model.module.parameters().__next__().device
+        self.device = self.model.module.parameters().__next__().device
 
         self.loss_fn = nn.MSELoss()
 
@@ -760,7 +761,7 @@ class SurfZTrainer():
 
         self.optimizer = torch.optim.AdamW(
             self.network_params,
-            lr=5e-4,
+            lr=args.lr,
             betas=(0.95, 0.999),
             weight_decay=1e-6,
             eps=1e-08,
@@ -774,14 +775,17 @@ class SurfZTrainer():
         self.iters = run_step
 
         # # Initilizer dataloader
+        num_worker = 16
+        # if num_worker > 4:
+        #     raise Warning("Too much workers may cause segmentation fault.")
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset,
                                                 shuffle=True,
                                                 batch_size=self.batch_size,
-                                                num_workers=16)
+                                                num_workers=num_worker)
         self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset,
                                              shuffle=False,
                                              batch_size=self.batch_size,
-                                             num_workers=16)
+                                             num_workers=num_worker)
 
         # Get Current Epoch
         try:
@@ -855,7 +859,6 @@ class SurfZTrainer():
                     # 根据采样的噪声、t获得加噪后的Latent:xt，以及纯噪声到GT的向量ut（ut与t无关，等于x1-x0）
                     t, xt, ut = self.transport.path_sampler.plan(t, x0, x1)
 
-                    # Predict veloity
                     surfZ_pred = self.model(xt, t, surfPos, surf_mask, surf_cls, condition_emb, is_train=True)
 
                     # Loss
@@ -866,6 +869,15 @@ class SurfZTrainer():
 
                 # Update model ===
                 with torch.autograd.set_detect_anomaly(True):
+                    # 检查 loss 是否非法
+                    if torch.isnan(total_loss) or torch.isinf(total_loss):
+                        print("Loss contains NaN or Inf")
+                    # 检查模型参数
+                    check_model = self.model.module if hasattr(self.model, "module") else self.model
+                    for name, param in check_model.named_parameters():
+                        if torch.isnan(param).any() or torch.isinf(param).any():
+                            print(f"Parameter {name} contains NaN or Inf")
+                    # 反向传播
                     self.scaler.scale(total_loss).backward()
                 # self.scaler.scale(total_loss).backward()
 
@@ -886,7 +898,6 @@ class SurfZTrainer():
                 self.iters += 1
                 progress_bar.update(1)
 
-        torch.cuda.empty_cache()
         progress_bar.close()
         # update train dataset
         if hasattr(self.train_dataset, 'data_chunks') and len(self.train_dataset.data_chunks) > 1:
@@ -897,7 +908,10 @@ class SurfZTrainer():
                 batch_size=self.batch_size, num_workers=16)
 
         self.epoch += 1
+
+        torch.cuda.empty_cache()
         return
+
 
     def test_val(self):
         """
@@ -989,7 +1003,7 @@ class SurfZTrainer():
         os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save(
             {
-                'model_state_dict': self.model.module.state_dict(),
+                'model_state_dict': self.model.module.state_dict() if hasattr(self.model, "module") else self.model.state_dict(),
                 'z_scaled': self.z_scaled,
                 'bbox_scaled': self.bbox_scaled
             },
@@ -1013,10 +1027,7 @@ class SurfInpaintingTrainer():
         self.z_scaled = args.z_scaled
         self.bbox_scaled = args.bbox_scaled
 
-        if args.device == None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = args.device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -1131,7 +1142,7 @@ class SurfInpaintingTrainer():
 
         self.optimizer = torch.optim.AdamW(
             self.network_params,
-            lr=5e-4,
+            lr=args.lr,
             betas=(0.95, 0.999),
             weight_decay=1e-6,
             eps=1e-08,
@@ -1386,7 +1397,7 @@ class SurfInpaintingTrainer():
         os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save(
             {
-                'model_state_dict': self.model.module.state_dict(),
+                'model_state_dict': self.model.module.state_dict() if hasattr(self.model, "module") else self.model.state_dict(),
                 'z_scaled': self.z_scaled,
                 'bbox_scaled': self.bbox_scaled
             },
@@ -1408,10 +1419,7 @@ class SurfInpaintingTrainer2():
         self.z_scaled = args.z_scaled
         self.bbox_scaled = args.bbox_scaled
 
-        if args.device == None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = args.device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -1536,7 +1544,7 @@ class SurfInpaintingTrainer2():
 
         self.optimizer = torch.optim.AdamW(
             self.network_params,
-            lr=5e-4,
+            lr=args.lr,
             betas=(0.95, 0.999),
             weight_decay=1e-6,
             eps=1e-08,
@@ -1768,7 +1776,7 @@ class SurfInpaintingTrainer2():
         os.makedirs(ckpt_log_dir, exist_ok=True)
         torch.save(
             {
-                'model_state_dict': self.model.module.state_dict(),
+                'model_state_dict': self.model.module.state_dict() if hasattr(self.model, "module") else self.model.state_dict(),
                 'z_scaled': self.z_scaled,
                 'bbox_scaled': self.bbox_scaled
             },

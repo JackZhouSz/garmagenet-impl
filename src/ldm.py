@@ -1,17 +1,12 @@
 import os
-import argparse
 
+import argparse
 from datasets.sxd import *
 from trainer import *
 
 
 def get_args_ldm():
-    
-    def _str2intlist(s): return list(map(int, s.split(',')))
-    
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--dataset', type=str, default='sxd', choices=['sxd', 'brep'],
-    #                     help='Dataset type, choose between [sxd, brep]')
     parser.add_argument('--data', type=str, default='data_process/deepcad_parsed', 
                         help='Path to data folder')
     # parser.add_argument('--use_data_root', action="store_true",
@@ -41,7 +36,7 @@ def get_args_ldm():
     # Training parameters
     parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
     parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')
-    parser.add_argument("--gpu", type=int, nargs='+', default=[0, 1], help="GPU IDs to use for training (default: [0, 1])")
+    parser.add_argument("--gpu", type=int, nargs='+', default=None, help="GPU IDs to use for training (default: None)")
 
     parser.add_argument('--batch_size', type=int, default=512, help='input batch size')  
     parser.add_argument('--train_nepoch', type=int, default=3000, help='number of epochs to train for')
@@ -54,14 +49,23 @@ def get_args_ldm():
     parser.add_argument('--bbox_scaled', type=float, default=1.0, help='scaled the bbox')
     parser.add_argument('--z_scaled', type=float, default=None, help='scaled the latent z')
     parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation.')
+    """
+    data_fields:
+        surf_bbox_wcs       surf_uv_bbox_wcs
+        surf_ncs            surf_wcs            surf_uv_ncs
+        surf_normals        surf_mask
+        pointcloud_feature  sampled_pc_cond
+        sketch_feature      
+    """
     parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
     parser.add_argument("--padding", default="zero", type=str, choices=['repeat', 'zero', 'zerolatent'])
 
     # Model parameters
     parser.add_argument("--text_encoder", type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help="Text encoder when applying text as generation condition.")
     parser.add_argument("--pointcloud_encoder", type=str, default=None, choices=[None, 'POINT_E'], help="")
+    parser.add_argument("--pointcloud_sampled_dir", type=str, default=None,  help="")   # 提前采样好的点云，如果没有的话会从GT的Garmage中采样不均匀的点云
     parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G"], help="")
-    parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="Text encoder when applying text as generation condition.")
+    parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="")   # 提前准备好的 sketch feature
 
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
@@ -72,7 +76,7 @@ def get_args_ldm():
     # Schedular (DDPM、FlowMatchEulerDiscreteScheduler of hunyuan3d2.0)
     parser.add_argument("--scheduler", type=str, default="DDPM", choices=["DDPM", "HY_FMED"], help="")
     parser.add_argument("--scheduler_shift", type=int, default=3, help="")
-    parser.add_argument("--time_sample", type=str, default="uniform", help="")  # [TODO]
+    parser.add_argument("--time_sample", type=str, default="uniform", choices=["uniform", ], help="")  # [TODO]
     # Save dirs and reload
     parser.add_argument('--expr', type=str, default="surface_pos", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
@@ -87,15 +91,17 @@ def run(args):
 
     # catch fault ===
     if True:
+        # [test]
+        print("faulthandler")
         import faulthandler
         # faulthandler.enable()
         faulthandler.enable(all_threads=True)
-        # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # 强制同步 CUDA 报错
-        # os.environ['TORCH_USE_CUDA_DSA'] = '1'  # CUDA Dynamic Safety Analysis（PyTorch >= 2.0）
 
-    # datamodule = getattr(datasets, args.datasets)
-    
-    # Initialize dataset and trainer
+    # init condition encoder ===
+
+
+
+    # Initialize dataset and trainer ===
     if args.option == 'surfpos':
         train_dataset = SurfPosData(args.data, args.list, validate=False, aug=args.data_aug, args=args)
         val_dataset = SurfPosData(args.data, args.list, validate=True, aug=False, args=args)
@@ -139,9 +145,6 @@ if __name__ == "__main__":
     
     # Parse input augments
     args = get_args_ldm()
-
-    # # # Set PyTorch to use only the specified GPU
-    # os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, args.gpu))
 
     # Make project directory if not exist
     if not os.path.exists(args.log_dir): os.makedirs(args.log_dir)
