@@ -18,7 +18,7 @@ from diffusers import DDPMScheduler  # , PNDMScheduler
 from src.utils import randn_tensor, data_fields_dict
 from src.bbox_utils import bbox_deduplicate
 from src.vis import draw_bbox_geometry, draw_bbox_geometry_3D2D, get_visualization_steps
-
+from src.pc_utils import normalize_pointcloud
 import plotly.graph_objects as go
 
 
@@ -37,7 +37,7 @@ def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
             x=x, y=y, z=z,
             mode='markers',
             marker=dict(
-                size=2,
+                size=4,
                 color=color,
                 colorscale='Viridis',
                 opacity=1,
@@ -60,7 +60,7 @@ def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
     camera = dict(
         up=dict(x=0, y=1, z=0),
         center=dict(x=0, y=0, z=0),
-        eye=dict(x=0, y=0, z=2)
+        eye=dict(x=0, y=0, z=3)
     )
     fig.update_layout(
         scene=dict(
@@ -520,7 +520,8 @@ def inference_one(
 
     # 如果点云 condition，渲染个点云图
     if args.pointcloud_encoder is not None:
-        pointcloud_condition_visualize(sampled_pc_cond, output_fp)
+        sampled_pts_normalized = normalize_pointcloud(sampled_pc_cond, 1)
+        pointcloud_condition_visualize(sampled_pts_normalized, output_fp)
         result["sampled_pc_cond"] = sampled_pc_cond
 
     if output_fp:
@@ -558,11 +559,17 @@ def run(args):
             print("No caption in cache.")
             caption = None
         if args.pointcloud_encoder is not None:
-            pointcloud_features = data_cache["pointcloud_feature"][sample_data_idx]
-            sampled_pc_cond = data_cache["sampled_pc_cond"][sample_data_idx]
             if "pccond_item_idx" in data_cache:
-                "根据data_fp去找点云condition会更加合理，不使用cache中的"
-                raise NotImplementedError
+                choice = 0  # 0:surface_uniform, 1:fps, 2:non_uniformX
+                pccond_idx = data_cache["pccond_item_idx"][sample_data_idx]
+                pointcloud_features = data_cache["pointcloud_feature"][pccond_idx[0]:pccond_idx[1]]
+                pointcloud_features = pointcloud_features[choice]
+                sampled_pc_cond = data_cache["sampled_pc_cond"][pccond_idx[0]:pccond_idx[1]]
+                sampled_pc_cond = sampled_pc_cond[choice]
+                # 根据data_fp去找点云condition会更加合理，不使用cache中的
+            else:
+                pointcloud_features = data_cache["pointcloud_feature"][sample_data_idx]
+                sampled_pc_cond = data_cache["sampled_pc_cond"][sample_data_idx]
         else:
             pointcloud_features = None
             sampled_pc_cond = None
