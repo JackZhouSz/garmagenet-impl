@@ -262,9 +262,10 @@ def draw_bbox_geometry(
     center = (all_mins + all_maxs) / 2
     max_range = np.max(all_maxs - all_mins) / 2
 
-    x_range = [center[0] - max_range, center[0] + max_range]
-    y_range = [center[1] - max_range, center[1] + max_range]
-    z_range = [center[2] - max_range, center[2] + max_range]
+    range_scale = 1.2
+    x_range = [(center[0] - max_range)*range_scale, (center[0] + max_range)*range_scale]
+    y_range = [(center[1] - max_range)*range_scale, (center[1] + max_range)*range_scale]
+    z_range = [(center[2] - max_range)*range_scale, (center[2] + max_range)*range_scale]
 
     # Update layout
     fig.update_layout(

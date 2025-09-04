@@ -65,7 +65,7 @@ def get_args_ldm():
     parser.add_argument("--pointcloud_encoder", type=str, default=None, choices=[None, 'POINT_E'], help="")
     parser.add_argument("--pointcloud_sampled_dir", type=str, default=None,  help="")   # 提前采样好的点云，如果没有的话会从GT的Garmage中采样不均匀的点云
     parser.add_argument("--pointcloud_feature_dir", type=str, default=None,  help="")
-    parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G"], help="")
+    parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H"], help="")
     parser.add_argument("--sketch_feature_dir", type=str, default="/A/B/C/D/E/F/G",  help="")   # 提前准备好的 sketch feature
 
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')

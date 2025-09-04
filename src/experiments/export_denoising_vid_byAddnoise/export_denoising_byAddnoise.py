@@ -11,24 +11,27 @@ from tqdm import tqdm
 
 import torch
 import numpy as np
-
+from diffusers import DDPMScheduler
 from matplotlib import pyplot as plt
 from matplotlib.colors import to_hex
 
-from diffusers import DDPMScheduler
+
 from src.experiments.export_denoising_vid_byAddnoise.vis_utils import *
 from src.vis import get_visualization_steps
 from src.network import AutoencoderKLFastDecode, AutoencoderKLFastEncode
 from src.utils import randn_tensor, _denormalize_pts
 
+from src.experiments.export_denoising_vid.export_denoising import draw_per_panel_geo_imgs
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str,
-                        default="/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/experiment/export_denoising_vid/pkl_files")
+                        default="/home/Ex1/data/resources/Garmage_SigAisia2025/旧Teasor的/vae_noised")
     parser.add_argument("--output_root", type=str,
-                        default="/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/experiment/export_denoising_vid/output")
-
+                        default="/home/Ex1/data/resources/Garmage_SigAisia2025_Revision/旧Teasor的_denoising/denoising_vid")
+    parser.add_argument("--vae_ckpt_fp", type=str,
+                        default='/data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e800.pt')
     args = parser.parse_args()
 
     data_dir = args.data_dir
@@ -46,6 +49,7 @@ if __name__ == "__main__":
         beta_end=0.02,
         clip_sample=False,
     )
+    vae_ckpt_fp = args.vae_ckpt_fp
     latent_channels, latent_size = 1, 8
     block_dims = [16,32,32,64,64,128]
     reso = 256
@@ -60,7 +64,7 @@ if __name__ == "__main__":
                                                 norm_num_groups=8,
                                                 sample_size=reso
                                                 )
-    surf_vae_decoder.load_state_dict(torch.load('/data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e800.pt'), strict=False)
+    surf_vae_decoder.load_state_dict(torch.load(vae_ckpt_fp), strict=False)
     surf_vae_decoder.to("cuda").eval()
 
     surf_vae_encoder = AutoencoderKLFastEncode(
@@ -75,7 +79,7 @@ if __name__ == "__main__":
         norm_num_groups=8,
         sample_size=reso,
     )
-    surf_vae_encoder.load_state_dict(torch.load('/data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e800.pt'), strict=False)
+    surf_vae_encoder.load_state_dict(torch.load(vae_ckpt_fp), strict=False)
     surf_vae_encoder.eval()
 
     # # data statistic ---------------------------------------------------------------
@@ -103,20 +107,22 @@ if __name__ == "__main__":
         with open(pkl_fp, "rb") as f:
             data = pickle.load(f)
 
-        surf_bbox = data["surf_bbox"]
-        surf_uv_bbox = data["surf_uv_bbox"]
+        surf_bbox = data.get("surf_bbox") or data.get("surf_bbox_wcs")
+        surf_uv_bbox = data.get("surf_uv_bbox") or data.get("surf_uv_bbox_wcs")
         surf_ncs = data["surf_ncs"].reshape(-1, reso, reso, 3)
         surf_uv_ncs = data["surf_uv_ncs"].reshape(-1, reso, reso, 2)
-        surf_mask = data["surf_mask"].reshape(-1, reso, reso, 1)
-        caption = data["caption"]
+        surf_mask = data["surf_mask"].reshape(-1, reso, reso, 1).astype(np.float32) *2 -1
+        # caption = data["caption"]
         n_surfs = len(surf_bbox)
         edited_mask = np.zeros(32, dtype=np.bool)
         edited_mask[:n_surfs] = True
         # Denoising ===
         sub_sub_output_dir1 = os.path.join(sub_output_dir, "denoising_3D")
         sub_sub_output_dir2 = os.path.join(sub_output_dir, "denoising_2D")
+        per_panel_denoising_dir = os.path.join(sub_output_dir, "per_panel_denoising")
         os.makedirs(sub_sub_output_dir1, exist_ok=True)
         os.makedirs(sub_sub_output_dir2, exist_ok=True)
+        os.makedirs(per_panel_denoising_dir, exist_ok=True)
 
         colors = [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, np.sum(edited_mask))]
         ddpm_scheduler.set_timesteps(1000)
@@ -132,23 +138,26 @@ if __name__ == "__main__":
         img_idx = 0
 
         for t in tqdm(ddpm_scheduler.timesteps, desc="Surf-Pos+Z Denoising"):
-            if t > 0:
-                surf_pos_noised = ddpm_scheduler.add_noise(surf_pos_orig, surf_pos_noise, t)
-            else:
-                surf_pos_noised = surf_pos_orig
-
-            # latentcode 按照t加噪，decode后作的为噪声加给garmage_orig
-            surf_z_noised = ddpm_scheduler.add_noise(surf_z_orig, surf_z_noise, t).to("cuda")
-            with torch.no_grad():
-                garmage_noise = surf_vae_decoder(surf_z_noised).permute(0, 2, 3, 1).detach().cpu()
-
-            if t > 0:
-                garmage_noised = ddpm_scheduler.add_noise(garmage_orig, garmage_noise, t)
-            else:
-                garmage_noised = garmage_orig
-
-            # visualize
             if t in visualization_steps:
+            # if t in [1, 0]:
+                if t > 0:
+                    surf_pos_noised = ddpm_scheduler.add_noise(surf_pos_orig, surf_pos_noise, t)
+                    surf_pos_noise2 = torch.randn(surf_pos_orig.shape)/20
+                    surf_pos_noised = ddpm_scheduler.add_noise(surf_pos_noised, surf_pos_noise2, t)
+                else:
+                    surf_pos_noised = surf_pos_orig
+
+                # latentcode 按照t加噪，decode后作的为噪声加给garmage_orig
+                surf_z_noised = ddpm_scheduler.add_noise(surf_z_orig, surf_z_noise, t).to("cuda")
+                with torch.no_grad():
+                    garmage_noised = surf_vae_decoder(surf_z_noised).permute(0, 2, 3, 1).detach().cpu()
+
+                if t > 0:
+                    garmage_noised = ddpm_scheduler.add_noise(garmage_orig, garmage_noised, t)
+                else:
+                    garmage_noised = garmage_orig
+
+                # visualize
                 _edited_mask = edited_mask[:n_surfs]
 
                 # 所有panel的bbox
@@ -165,41 +174,41 @@ if __name__ == "__main__":
                 garmage_noised = garmage_noised.numpy()
                 _surf_ncs_noised_ = garmage_noised[..., :3].reshape(n_surfs, -1, 3)
                 _surf_uv_ncs_noised_ = garmage_noised[..., 3:5].reshape(n_surfs, -1, 2)
-                _surf_ncs_mask_noised_ = garmage_noised[..., -1:].reshape(n_surfs, -1) > 0.0
+                _surf_mask_noised_ = garmage_noised[..., -1:].reshape(n_surfs, -1) > 0.0
 
                 # 编辑过的panel的有噪声的Garmage
                 _surf_ncs_noised_ = _surf_ncs_noised_[_edited_mask]
                 _surf_uv_ncs_noised_ = _surf_uv_ncs_noised_[_edited_mask]
-                _surf_ncs_mask_noised_ = _surf_ncs_mask_noised_[_edited_mask]
+                _surf_mask_noised_ = _surf_mask_noised_[_edited_mask]
 
                 # 编辑过的panel的3d&2d的denormalized的点
                 _Point_3D_ = _denormalize_pts(_surf_ncs_noised_, _BBox3D_)
                 _Point_2D_ = _denormalize_pts(_surf_uv_ncs_noised_, _BBox2D_[...,[0, 1, 3, 4]])
                 _Point_2D_ = np.concatenate([_Point_2D_, np.zeros((*_Point_2D_.shape[:2], 1))], axis=-1)
 
-                # 可视化3D点+bbox
+                # 可视化3D点+bbox ===
                 draw_bbox_geometry(
                     bboxes=_BBox3D_,
                     bbox_colors=colors,
                     points=_Point_3D_,
-                    point_masks=_surf_ncs_mask_noised_,
+                    point_masks=_surf_mask_noised_,
                     point_colors=colors,
                     num_point_samples=2000,
                     all_bboxes=_BBox3D_,
                     output_fp=os.path.join(sub_sub_output_dir1, f"{img_idx}".zfill(4) +  f"geometry_denoising_t="+f"{t}".zfill(4)+".png"),
                     visatt_dict = {
                         "bboxmesh_opacity": 0.12,
-                        "point_size": 10,
+                        # "point_size": 10,
                         "point_opacity": 0.8,
                         "bboxline_width": 8
                     },
                 )
-                # 可视化2D点+bbox
+                # 可视化2D点+bbox ===
                 draw_bbox_geometry(
                     bboxes=_BBox2D_,
                     bbox_colors=colors,
                     points=_Point_2D_,
-                    point_masks=_surf_ncs_mask_noised_,
+                    point_masks=_surf_mask_noised_,
                     point_colors=colors,
                     num_point_samples=2000,
                     all_bboxes=_BBox2D_,
@@ -212,4 +221,18 @@ if __name__ == "__main__":
                         "camera_eye_z": 1.5
                     },
                 )
+
+                # 可视化几何图 ===
+                geo_denoising = _surf_ncs_noised_
+                mask_denoising = _surf_mask_noised_
+                colors = [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, n_surfs)]
+                draw_per_panel_geo_imgs(
+                    geo_denoising.reshape(n_surfs, -1, 3),
+                    mask_denoising.reshape(n_surfs, -1),
+                    colors,
+                    pad_size=5,
+                    out_fp=os.path.join(per_panel_denoising_dir, f"{img_idx}".zfill(4) + "_t=" + f"{t}".zfill(4) + ".png"))
+
                 img_idx+=1
+                # import sys
+                # sys.exit(0)

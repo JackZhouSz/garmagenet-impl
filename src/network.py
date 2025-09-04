@@ -433,6 +433,10 @@ class SketchEncoder:
             self.sketch_emb_dim = 1536
             self.sketch_encoder = None
             self.sketch_embedder_fn = None
+        elif encoder == 'RADIO_V2.5-H':
+            self.sketch_emb_dim = 3840
+            self.sketch_encoder = None
+            self.sketch_embedder_fn = None
         else:
             raise NotImplementedError
         print(f"[DONE] Init {encoder} sketch encoder.")

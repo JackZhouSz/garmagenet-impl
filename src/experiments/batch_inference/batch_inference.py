@@ -334,15 +334,15 @@ def inference_one(
                         v *= h
                     if v < bbox_threshold:
                         is_deduped = True
-                    # elif non_repeat is not None:  # 去重复的（zero padding 也有概率会产生重复）
-                    #     bbox_threshold_2 = 0.03
-                    #     diff = np.max(np.max(np.abs(non_repeat - bbox)[..., :3], -1), -1)  #
-                    #     same = diff < bbox_threshold_2
-                    #     bbox_rev = bbox[::-1]  # also test reverse bbox for matching
-                    #     diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., :3], -1), -1)  # [...,-2:]
-                    #     same_rev = diff_rev < bbox_threshold_2
-                    #     if same.sum() >= 1 or same_rev.sum() >= 1:
-                    #         is_deduped = True  # 当前BBox是否被去重了
+                    elif non_repeat is not None:  # 去重复的（zero padding 也有概率会产生重复）
+                        bbox_threshold_2 = 0.02
+                        diff = np.max(np.max(np.abs(non_repeat - bbox)[..., :3], -1), -1)  #
+                        same = diff < bbox_threshold_2
+                        bbox_rev = bbox[::-1]  # also test reverse bbox for matching
+                        diff_rev = np.max(np.max(np.abs(non_repeat - bbox_rev)[..., :3], -1), -1)  # [...,-2:]
+                        same_rev = diff_rev < bbox_threshold_2
+                        if same.sum() >= 1 or same_rev.sum() >= 1:
+                            is_deduped = True  # 当前BBox是否被去重了
                     if is_deduped==False:
                         if non_repeat is None:
                             non_repeat = bbox[np.newaxis, :, :]

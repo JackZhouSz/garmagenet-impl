@@ -19,8 +19,9 @@ def farthest_point_sample(points, npoint, max_npoint=40000):
         mask = dist < distance
         distance[mask] = dist[mask]
         farthest = np.argmax(distance, -1)
-    points = points[centroids.astype(np.int32)]
-    return points
+    indices = centroids.astype(np.int32)
+    points = points[indices]
+    return points, indices
 
 
 def normalize_pointcloud(pc: np.ndarray, range=1) -> np.ndarray:

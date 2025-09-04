@@ -1,39 +1,65 @@
-#!/bin/bash\
-
 ### Train the Latent Diffusion Model ###
 
+# Radio-v2.5-h 测试泛化性能否提升 ===
+# Z 190:2460 182:1230
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz \
+    --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_radio_v2.5-h_Q124/encoder_mode \
+    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_sketchCond_radio_v2.5-h --train_nepoch 600000 --test_nepoch 200 --save_nepoch 20000 \
+    --batch_size 2460 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
+    --sketch_encoder RADIO_V2.5-H --sketch_feature_dir /data/AIGP/feature_radio_v2.5-h \
+    --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature
 
-# 多种采样方式的点云条件版本 ===
-# zero padding xyz uv mask Q1-4 pcCond_uniform_nonuniform_fps ===
-# POS Bsize 182:1230
+# POS 188:1230
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
+    --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_sketchCond_radio_v2.5-h_Q124/encoder_mode \
+    --padding zero \
+    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_sketchCond_radio_v2.5-h --train_nepoch 600000 --test_nepoch 1000 --save_nepoch 20000 \
+    --batch_size 1230 --max_face 32 --bbox_scaled 1.0 \
+    --sketch_encoder RADIO_V2.5-H --sketch_feature_dir /data/AIGP/feature_radio_v2.5-h \
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs sketch_feature --gpu 0
+
+
+
+
+
+# Revision 多种采样方式的点云条件 ===
+# zero padding xyz uv mask Q1-4 pcCond_uniform_nonuniform_fps
+# POS Bsize 182:1230 190：2460
 cd /data/lsr/code/style3d_gen
 export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl --option surfpos \
     --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_multitype/encoder_mode \
     --padding zero \
-    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_pcCond_multitype --train_nepoch 200000 --test_nepoch 1000 --save_nepoch 1000 \
-    --batch_size 1640 --max_face 32 --bbox_scaled 1.0 \
+    --expr stylexdQ1Q2Q4_surfpos_xyzuv_pad_zero_pcCond_multitype --train_nepoch 300000 --test_nepoch 1000 --save_nepoch 5000 \
+    --batch_size 1230 --max_face 32 --bbox_scaled 1.0 \
     --pointcloud_encoder POINT_E --pointcloud_feature_dir /data/AIGP/pc_cond_sample_multitype/ \
-    --data_fields surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
+    --data_fields surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature --gpu 0
 
 # Z Bsize 188:1230
 cd /data/lsr/code/style3d_gen
 export PYTHONPATH=/data/lsr/code/style3d_gen
-export CUDA_VISIBLE_DEVICES=1
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
     --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl  --option surfz \
     --surfvae log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
     --cache_dir log/stylexdQ1Q2Q4_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e0800_pcCond_multitype/encoder_mode \
-    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_pcCond_multitype --train_nepoch 200000 --test_nepoch 200 --save_nepoch 5000 \
-    --batch_size 1640 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
+    --expr stylexdQ1Q2Q4_surfz_xyzuv_pad_zero_pcCond_multitype --train_nepoch 300000 --test_nepoch 200 --save_nepoch 5000 \
+    --batch_size 2460 --chunksize -1 --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
     --pointcloud_encoder POINT_E --pointcloud_feature_dir /data/AIGP/pc_cond_sample_multitype/\
     --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
 
 
-# Revision需要点云拆板实验，因此需要重新训练一版 ===
-# zero padding xyz uv mask Q1-4 pcCond_uniform ===
+# Revision mesh表面均匀采样的点云条件 ===
+# zero padding xyz uv mask Q1-4 pcCond_uniform
 # POS Bsize 182:1230
 cd /data/lsr/code/style3d_gen
 export PYTHONPATH=/data/lsr/code/style3d_gen
@@ -45,9 +71,7 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/process
     --batch_size 1640 --max_face 32 --bbox_scaled 1.0 \
     --pointcloud_encoder POINT_E --pointcloud_sampled_dir /data/AIGP/pc_cond_sample/uniform_2048 \
     --data_fields surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
-
 # Z Bsize 188:1230
-# 最初在187上跑，训练了数个小时后突然无法运行了，转到188训练
 cd /data/lsr/code/style3d_gen
 export PYTHONPATH=/data/lsr/code/style3d_gen
 python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
@@ -59,8 +83,6 @@ python src/ldm.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/process
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --sample_mode mode \
     --pointcloud_encoder POINT_E --pointcloud_sampled_dir /data/AIGP/pc_cond_sample/uniform_2048 \
     --data_fields surf_ncs surf_uv_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature
-
-
 
 
 

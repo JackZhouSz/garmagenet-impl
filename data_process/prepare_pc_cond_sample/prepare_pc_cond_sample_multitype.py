@@ -89,7 +89,7 @@ def process_one_obj(obj_path, obj_dataset_folder, output_folder, sample_num):
                 garment_mesh = trimesh.load_mesh(obj_path, process=False)
 
             vertices = np.array(garment_mesh.vertices)
-            pc_sampled_fps = farthest_point_sample(vertices, 2048, max_npoint=40000)
+            pc_sampled_fps = farthest_point_sample(vertices, 2048, max_npoint=40000)[0]
             np.save(pc_save_path_2, pc_sampled_fps)
 
         results["status"] = "ok"

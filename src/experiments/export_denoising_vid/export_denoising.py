@@ -118,6 +118,8 @@ def draw_per_panel_geo_imgs(surf_ncs, surf_mask, colors, pad_size=5, out_fp=''):
 
 
 if __name__ == "__main__":
+    raise NotImplementedError("This function as been merged into src/experiments/batch_inference/batch_inference.py")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str,
                         default="/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/src/experiments/export_denoising_vid/pkl_files")
