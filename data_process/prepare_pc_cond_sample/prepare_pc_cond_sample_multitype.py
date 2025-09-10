@@ -135,10 +135,6 @@ def process_one_pkl(pkl_path, output_folder, sample_num):
 
 
 def sample_pointclouds_non_uniform(pkl_dataset_folders, output_folder: str, sample_num: int = 4096, num_workers: int = 8):
-    """
-    非均匀采样 (多进程版)
-    """
-    # 收集所有 pkl 文件
     pkl_paths = []
     for pkl_dataset_folder in tqdm(pkl_dataset_folders, desc="Scanning"):
         pkl_list = glob(os.path.join(pkl_dataset_folder,"**", "*.pkl"), recursive=True)
@@ -158,9 +154,9 @@ def sample_pointclouds_non_uniform(pkl_dataset_folders, output_folder: str, samp
             if result["status"] == "error":
                 print(f"❌ Error processing {result['path']}: {result['error']}")
             elif result["status"] == "skip":
-                pass  # 已存在，跳过
+                pass
             else:
-                pass  # 正常完成
+                pass
 
     print("✅ Done")
     return results
