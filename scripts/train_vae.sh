@@ -1,5 +1,83 @@
 #!/bin/bash\
 
+# === DC_AE ===
+# DC-AE wcs mask Q124
+# 32:187
+cd /data/lsr/code/style3d_gen
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/vae.py \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae-DC_surf_256_xyz-w_mask_unet6_latent_8_8_1 --vae_type dc \
+    --batch_size 128 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
+    --test_nepoch 20 --save_nepoch 10 --train_nepoch 5000 \
+    --data_fields surf_wcs surf_mask \
+    --chunksize 512 --lr 6e-5
+
+# === Auto KL ===
+# VAE w-xyz mask Q124 16x16x4 [TODO 还没训]
+# Bsize 188:64
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_xyz-w_mask_unet6_latent_16_16_4_KLlossScaling \
+    --batch_size 128 --block_dims 16 32 32 64 64 --latent_channels 1 \
+    --test_nepoch 10 --save_nepoch 50 --train_nepoch 4000 \
+    --data_fields surf_wcs surf_mask \
+    --chunksize 512
+
+
+# VAE w-xyz mask Q124 16x16x1
+# Bsize 190:128
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_xyz-w_mask_unet6_latent_16_16_1_KLlossScaling \
+    --batch_size 128 --block_dims 16 32 32 64 64 --latent_channels 1 \
+    --test_nepoch 10 --save_nepoch 50 --train_nepoch 4000 \
+    --data_fields surf_wcs surf_mask \
+    --chunksize 512
+
+
+# VAE w-xyz normal mask Q124 8x8x4
+# Bsize 190:128
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_xyz-w_mask_unet6_latent_8_8_4 \
+    --batch_size 128 --block_dims 16 32 32 64 64 128 --latent_channels 4 \
+    --test_nepoch 10 --save_nepoch 50 --train_nepoch 4000 \
+    --data_fields surf_wcs surf_normals surf_mask \
+    --chunksize 512
+
+
+# VAE w-xyz mask Q124 (训练这个是因为怀疑normal的分布的方差比surf_wcs的大太多，导致wcs层训练不出来)
+# Bsize 190:128
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_xyz-w_mask_unet6_latent_8_8_1 \
+    --batch_size 128 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
+     --test_nepoch 10 --save_nepoch 50 --train_nepoch 4000 \
+     --data_fields surf_wcs surf_mask \
+     --chunksize 512
+
+# VAE w-xyz nrm mask Q124
+# Bsize 190:128
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_xyz-w_normal_mask_unet6_latent_8_8_1 \
+    --batch_size 128 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
+     --test_nepoch 10 --save_nepoch 50 --train_nepoch 4000 \
+     --data_fields surf_wcs surf_normals surf_mask \
+     --chunksize 512
+
+
+# VAE uv mask Q124
+# Bsize 187:64
+export PYTHONPATH=/data/lsr/code/style3d_gen
+python src/vae.py --data /data/AIGP/brep_reso_256_edge_snap_with_caption/processed \
+    --list data_process/data_lists/stylexd_data_split_reso_256_Q1Q2Q4.pkl \
+    --expr stylexdQ1Q2Q4_vae_surf_256_uv_mask_unet6_latent_1 \
+    --batch_size 64 --block_dims 16 32 32 64 64 128 --latent_channels 1 \
+    --test_nepoch 20 --save_nepoch 50 --train_nepoch 3000 \
+    --data_fields surf_uv_ncs surf_mask --chunksize 512
+
 # VAE mask Q124
 # Bsize 187:64
 export PYTHONPATH=/data/lsr/code/style3d_gen

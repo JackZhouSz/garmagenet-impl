@@ -78,8 +78,7 @@ class SurfData(torch.utils.data.Dataset):
                  validate=False,
                  aug=False,
                  chunksize=-1,
-                 args=None,
-                 use_data_root=False,):
+                 args=None):
         self.args = args
 
         self.randomly_noise_geometry = args.randomly_noise_geometry
@@ -93,7 +92,7 @@ class SurfData(torch.utils.data.Dataset):
         print('Loading %s data...'%('validation' if validate else 'training'))
         with open(input_list, "rb") as tf:
             self.data_list = pickle.load(tf)['val' if validate else 'train']
-            if use_data_root:
+            if args.use_data_root:
                 self.data_list = [
                     os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list \
                     if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))
@@ -163,8 +162,7 @@ class SurfData(torch.utils.data.Dataset):
 
 class SurfPosData(torch.utils.data.Dataset):
     """ Surface position (3D bbox) Dataloader """
-    def __init__(self, input_data, input_list, validate=False, aug=False, args=None,
-                 use_data_root=False):
+    def __init__(self, input_data, input_list, validate=False, aug=False, args=None,):
         self.args = args
 
         self.max_face = args.max_face
@@ -209,10 +207,10 @@ class SurfPosData(torch.utils.data.Dataset):
             print('Loading %s data...'%('validation' if validate else 'training'))
             with open(input_list, 'rb') as f:
                 self.data_list = pickle.load(f)['val' if self.validate else 'train']  # [::50]
-                if use_data_root:
-                    self.data_list = [
-                        os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list \
-                        if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
+                if args.use_data_root:
+                    self.data_list = [os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list
+                                        if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
+
                 print('*** data_list: ', self.data_list[0])
                 # if self.validate: self.data_list = random.choices(self.data_list, k=128)
             # print('Total items: ', len(self.data_list))
@@ -450,7 +448,6 @@ class SurfZData(torch.utils.data.Dataset):
             validate=False,
             aug=False,
             args=None,
-            use_data_root=False,
     ):
         self.args = args
 
@@ -490,9 +487,10 @@ class SurfZData(torch.utils.data.Dataset):
 
         print('Loading %s data...'%('validation' if validate else 'training'))
         with open(input_list, 'rb') as f: self.data_list = pickle.load(f)['val' if self.validate else 'train'] # [::50]
-        if use_data_root:
-            self.data_list = [os.path.basename(x) for x in self.data_list
+        if args.use_data_root:
+            self.data_list = [os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list
                               if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
+
         random.shuffle(self.data_list)
         print('Total items: ', len(self.data_list), self.data_list[0])
 
@@ -785,8 +783,7 @@ class SurfZData(torch.utils.data.Dataset):
 
         start_idx, end_idx = 0, 0
         for data_id in tqdm(self.data_list):
-
-            data_fp = os.path.join(self.data_root, data_id)
+            data_fp = data_id
             try:
                 surf_pos, surf_ncs, surf_cls, pointcloud_feature, sampled_pc_cond, sketch_feature, caption, data_fp_orig = self.__load_one__(data_fp)
                 assert surf_pos.shape[0] <= self.max_face
@@ -959,3 +956,19 @@ class SurfZData(torch.utils.data.Dataset):
         return (
             surf_pos, surf_latents, pad_mask, surf_cls, caption, pointcloud_feature, sketch_feature
         )
+
+class SurfZ_OneStage_Data(SurfZData):
+    def __init__(
+            self,
+            input_data,
+            input_list,
+            validate=False,
+            aug=False,
+            args=None,
+    ):
+        super().__init__(input_data, input_list, validate, aug, args)
+        self.cache_fp = os.path.join(
+            args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('log', 'cache'),
+            'one_stage_z_bbox_%s.pkl'%('validate' if validate else 'train')
+        )
+        # self.data_list = self.data_list[:50]

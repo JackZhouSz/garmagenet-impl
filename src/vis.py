@@ -628,7 +628,7 @@ def get_visualization_steps():
             if i % 10 == 0:
                 steps.append(i)
         elif i >= 50:
-            if i % 5 == 0:
+            if i % 2 == 0:
                 steps.append(i)
         elif i >= 20:
             if i % 1 == 0:

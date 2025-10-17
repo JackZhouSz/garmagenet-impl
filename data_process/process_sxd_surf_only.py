@@ -22,7 +22,7 @@ from multiprocessing import Pool
 
 from matplotlib.colors import to_rgba
 
-from geometry_utils.obj import read_obj  # type: ignore
+from .geometry_utils.obj import read_obj  # type: ignore
 
 torch.set_grad_enabled(False)
 

@@ -201,7 +201,7 @@ def draw_bbox_geometry(
                 y=cur_points[:, 1],
                 z=cur_points[:, 2],
                 mode='markers',
-                marker=dict(size=2, color=point_colors[idx]),
+                marker=dict(size=6, color=point_colors[idx]),
                 name=f'Point Cloud {idx+1}'
             ))
 
@@ -258,11 +258,12 @@ def draw_bbox_geometry(
     else:
         all_mins = np.min(all_bboxes[:, :3], axis=0)
         all_maxs = np.max(all_bboxes[:, 3:], axis=0)
+
     # 计算中心点和最大跨度以保持 aspect 比例
     center = (all_mins + all_maxs) / 2
     max_range = np.max(all_maxs - all_mins) / 2
 
-    range_scale = 1.2
+    range_scale = 1.5
     x_range = [(center[0] - max_range)*range_scale, (center[0] + max_range)*range_scale]
     y_range = [(center[1] - max_range)*range_scale, (center[1] + max_range)*range_scale]
     z_range = [(center[2] - max_range)*range_scale, (center[2] + max_range)*range_scale]
@@ -317,7 +318,7 @@ def draw_bbox_geometry(
         fig.show("browser")
 
     if output_fp is not None and export_data_config is None:
-        fig.write_image(output_fp, width=1080, height=1080, scale=2)
+        fig.write_image(output_fp, width=2000, height=2000, scale=1)
 
     # 绕着人旋转一圈，并保存图片 --------------------------------------------------------------------------------------------
     if export_data_config:

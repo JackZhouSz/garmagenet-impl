@@ -83,9 +83,17 @@ data_fields_dict = {
         "title": "Geometry Images",
         "len": 3,
     },
+    "surf_wcs": {
+        "title": "Geometry_Wcs Images",
+        "len": 3,
+    },
     "surf_uv_ncs": {
         "title": "UV Images",
         "len": 2,
+    },
+    "surf_normals": {
+        "title": "Normals Images",
+        "len": 3,
     },
     "surf_mask": {
         "title": "Mask Images",

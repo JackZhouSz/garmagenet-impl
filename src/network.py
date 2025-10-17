@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 from PIL import Image
+from torch.nn import functional as F
+from torchvision.transforms.functional import pil_to_tensor
 from diffusers.configuration_utils import ConfigMixin, register_to_config
-from diffusers.utils import BaseOutput, is_torch_version
+from diffusers.utils import BaseOutput
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.autoencoders.vae import Decoder, DecoderOutput, DiagonalGaussianDistribution, Encoder
 
@@ -421,7 +423,6 @@ class SketchEncoder:
             safetensors_path = '/data/lsr/models/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
             vit_model = timm.create_model(VIT_MODEL, pretrained=False).to(self.device)
             vit_model.eval()
-
             # 加载 safetensors 权重
             with safe_open(safetensors_path, framework="pt") as f:
                 # safetensors 返回一个字典，包含所有张量
@@ -434,23 +435,55 @@ class SketchEncoder:
             self.sketch_encoder = None
             self.sketch_embedder_fn = None
         elif encoder == 'RADIO_V2.5-H':
+            radio_model = torch.hub.load(
+                'NVlabs/RADIO',
+                'radio_model',
+                version="radio_v2.5-h",
+                progress=True,
+                skip_validation=True
+            )
+            radio_model.cuda().eval()
+            self.model = radio_model
             self.sketch_emb_dim = 3840
-            self.sketch_encoder = None
-            self.sketch_embedder_fn = None
+            self.sketch_encoder = radio_model
+            self.sketch_embedder_fn = self._get_radiov2_5h_sketch_embeds
         else:
             raise NotImplementedError
         print(f"[DONE] Init {encoder} sketch encoder.")
 
-    def _get_laion2b_sketch_embeds(
-            self,
-            sketch_fp
-    ):
+    def _get_laion2b_sketch_embeds(self, sketch_fp):
         image = Image.open(sketch_fp).convert('RGB')
-        image =  self.img_process(image)
+        image = self.img_process(image)
         image = image.to(self.device).unsqueeze(0)
         sketch_features = self.sketch_encoder.forward_features(image).squeeze()
         sketch_features = sketch_features[0].unsqueeze(0)
         return sketch_features
+
+    def _get_radiov2_5h_sketch_embeds(self, sketch_fp):
+        with torch.no_grad():
+            # load image
+            image = Image.open(sketch_fp).convert('RGB')
+            x = pil_to_tensor(image).to(dtype=torch.float32, device='cuda')
+            x.div_(255.0)
+            x = x.unsqueeze(0)
+
+            # adjust resolution
+            nearest_res = self.model.get_nearest_supported_resolution(*x.shape[-2:])
+            x = F.interpolate(x, nearest_res, mode='bilinear', align_corners=False)
+
+            # from matplotlib import pyplot as plt
+            # nearest_res = self.model.get_nearest_supported_resolution(*(x.shape[-2:][::-1]))
+            # img = x[0].permute(1, 2, 0).cpu().numpy()
+            # plt.imshow(img)
+            # plt.axis("off")
+            # plt.savefig("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/SigAsia2025_Revision/clean_matadata/123.png")
+            # plt.show()
+
+            # inference
+            with torch.autocast('cuda', dtype=torch.bfloat16):
+                summary, _ = self.model(x)
+            sketch_features = summary[0]
+            return sketch_features
 
     def __call__(self, sketch_fp):
         return self.sketch_embedder_fn(sketch_fp)
@@ -570,6 +603,7 @@ class SurfPosNet_hunyuandit(nn.Module):
             mlp_ratio=4.0,
             qkv_bias=True,
             time_factor=1000,
+            dropout=0.1,
         )
 
     def forward(
@@ -648,13 +682,13 @@ class SurfZNet(nn.Module):
                 nn.SiLU(),
                 nn.Linear(self.embed_dim, self.embed_dim),
             )
-
-        self.p_embed = nn.Sequential(
-            nn.Linear(self.p_dim, self.embed_dim),
-            nn.LayerNorm(self.embed_dim),
-            nn.SiLU(),
-            nn.Linear(self.embed_dim, self.embed_dim),
-        ) 
+        if self.p_dim > 0:
+            self.p_embed = nn.Sequential(
+                nn.Linear(self.p_dim, self.embed_dim),
+                nn.LayerNorm(self.embed_dim),
+                nn.SiLU(),
+                nn.Linear(self.embed_dim, self.embed_dim),
+            )
 
         self.time_embed = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
@@ -687,10 +721,12 @@ class SurfZNet(nn.Module):
         bsz = timesteps.size(0)
 
         time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
-        z_embeds = self.z_embed(surfZ) 
-        p_embeds = self.p_embed(surfPos)
-
-        tokens = z_embeds + p_embeds + time_embeds
+        z_embeds = self.z_embed(surfZ)
+        if self.p_dim > 0:
+            p_embeds = self.p_embed(surfPos)
+            tokens = z_embeds + p_embeds + time_embeds
+        else:
+            tokens = z_embeds + time_embeds
 
         # if self.use_cf and class_label is not None:  # classifier-free
         #     if is_train:
@@ -717,7 +753,7 @@ class SurfZNet(nn.Module):
 
 
 class SurfZNet_hunyuandit(nn.Module):
-    def __init__(self, p_dim=6, z_dim=3 * 4 * 4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=[3,9], num_cf=-1):
+    def __init__(self, p_dim=6, z_dim=3 * 4 * 4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=[3,9],dropout=0.1, num_cf=-1):
         super(SurfZNet_hunyuandit, self).__init__()
         self.p_dim = p_dim
         self.z_dim = z_dim
@@ -743,6 +779,7 @@ class SurfZNet_hunyuandit(nn.Module):
             mlp_ratio=4.0,
             qkv_bias=True,
             time_factor=1000,
+            dropout=dropout,
         )
 
     def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, condition=None, is_train=False):

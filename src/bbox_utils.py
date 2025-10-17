@@ -212,3 +212,23 @@ def evaluate_bboxes_iou(pred_bboxes, gt_bboxes, indices_2d=[6, 7, 8, 9]):
 
 def bbox_l2_distance(pred_bbox, gt_bbox):
     return np.sqrt(np.sum((pred_bbox - gt_bbox) ** 2))
+
+
+def get_bbox(point_cloud):
+    """
+    Get the tighest fitting 3D bounding box giving a set of points (axis-aligned)
+    """
+    # Find the minimum and maximum coordinates along each axis
+    min_x = np.min(point_cloud[:, 0])
+    max_x = np.max(point_cloud[:, 0])
+
+    min_y = np.min(point_cloud[:, 1])
+    max_y = np.max(point_cloud[:, 1])
+
+    min_z = np.min(point_cloud[:, 2])
+    max_z = np.max(point_cloud[:, 2])
+
+    # Create the 3D bounding box using the min and max values
+    min_point = np.array([min_x, min_y, min_z])
+    max_point = np.array([max_x, max_y, max_z])
+    return min_point, max_point

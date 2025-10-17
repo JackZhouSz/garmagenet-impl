@@ -145,6 +145,7 @@ class SelfAttention(nn.Module):
         dim: int,
         num_heads: int = 8,
         qkv_bias: bool = False,
+        dropout=0.1,
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -152,7 +153,11 @@ class SelfAttention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.norm = QKNorm(head_dim)
-        self.proj = nn.Linear(dim, dim)
+        # self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.Dropout(dropout),
+        )
 
     def forward(self, x: Tensor, pe: Tensor, attn_mask=None) -> Tensor:
         qkv = self.qkv(x)
@@ -193,6 +198,7 @@ class DoubleStreamBlock(nn.Module):
         num_heads: int,
         mlp_ratio: float,
         qkv_bias: bool = False,
+        dropout=0.1,
     ):
         super().__init__()
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
@@ -206,6 +212,7 @@ class DoubleStreamBlock(nn.Module):
         self.img_mlp = nn.Sequential(
             nn.Linear(hidden_size, mlp_hidden_dim, bias=True),
             GELU(approximate="tanh"),
+            nn.Dropout(dropout),
             nn.Linear(mlp_hidden_dim, hidden_size, bias=True),
         )
 
@@ -217,6 +224,7 @@ class DoubleStreamBlock(nn.Module):
         self.txt_mlp = nn.Sequential(
             nn.Linear(hidden_size, mlp_hidden_dim, bias=True),
             GELU(approximate="tanh"),
+            nn.Dropout(dropout),
             nn.Linear(mlp_hidden_dim, hidden_size, bias=True),
         )
 
@@ -273,6 +281,7 @@ class SingleStreamBlock(nn.Module):
         num_heads: int,
         mlp_ratio: float = 4.0,
         qk_scale: Optional[float] = None,
+        dropout=0.1,
     ):
         super().__init__()
 
@@ -285,8 +294,9 @@ class SingleStreamBlock(nn.Module):
         # qkv and mlp_in
         self.linear1 = nn.Linear(hidden_size, hidden_size * 3 + self.mlp_hidden_dim)
         # proj and mlp_out
-        self.linear2 = nn.Linear(hidden_size + self.mlp_hidden_dim, hidden_size)
-
+        self.linear2 = nn.Linear(hidden_size + self.mlp_hidden_dim, hidden_size)  # [TODO] dropout
+        self.dropout = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
         self.norm = QKNorm(head_dim)
 
         self.hidden_size = hidden_size
@@ -315,7 +325,14 @@ class SingleStreamBlock(nn.Module):
         # compute attention
         attn = attention(q, k, v, attn_mask=attn_mask)
         # compute activation in mlp stream, cat again and run second linear layer
-        output = self.linear2(torch.cat((attn, self.mlp_act(mlp)), 2))
+        output = self.dropout2(
+            self.linear2(
+                torch.cat((
+                    attn,
+                    self.dropout(self.mlp_act(mlp))),
+                    2)
+            )
+        )
         return x + mod.gate * output
 
 
@@ -333,135 +350,6 @@ class LastLayer(nn.Module):
         return x
 
 
-# class Hunyuan3DDiT(nn.Module):
-#     def __init__(
-#         self,
-#         in_channels: int = 64,
-#         context_in_dim: int = 1536,
-#         hidden_size: int = 1024,
-#         mlp_ratio: float = 4.0,
-#         num_heads: int = 16,
-#         depth: int = 16,
-#         depth_single_blocks: int = 32,
-#         axes_dim: List[int] = [64],
-#         theta: int = 10_000,
-#         qkv_bias: bool = True,
-#         time_factor: float = 1000,
-#         guidance_embed: bool = False,
-#         ckpt_path: Optional[str] = None,
-#         **kwargs,
-#     ):
-#         super().__init__()
-#         self.in_channels = in_channels
-#         self.context_in_dim = context_in_dim
-#         self.hidden_size = hidden_size
-#         self.mlp_ratio = mlp_ratio
-#         self.num_heads = num_heads
-#         self.depth = depth
-#         self.depth_single_blocks = depth_single_blocks
-#         self.axes_dim = axes_dim
-#         self.theta = theta
-#         self.qkv_bias = qkv_bias
-#         self.time_factor = time_factor
-#         self.out_channels = self.in_channels
-#         self.guidance_embed = guidance_embed
-#
-#         if hidden_size % num_heads != 0:
-#             raise ValueError(
-#                 f"Hidden size {hidden_size} must be divisible by num_heads {num_heads}"
-#             )
-#         pe_dim = hidden_size // num_heads
-#         if sum(axes_dim) != pe_dim:
-#             raise ValueError(f"Got {axes_dim} but expected positional dim {pe_dim}")
-#         self.hidden_size = hidden_size
-#         self.num_heads = num_heads
-#         self.latent_in = nn.Linear(self.in_channels, self.hidden_size, bias=True)
-#         self.time_in = MLPEmbedder(in_dim=256, hidden_dim=self.hidden_size)
-#         self.cond_in = nn.Linear(context_in_dim, self.hidden_size)
-#         self.guidance_in = (
-#             MLPEmbedder(in_dim=256, hidden_dim=self.hidden_size) if guidance_embed else nn.Identity()
-#         )
-#
-#         self.double_blocks = nn.ModuleList(
-#             [
-#                 DoubleStreamBlock(
-#                     self.hidden_size,
-#                     self.num_heads,
-#                     mlp_ratio=mlp_ratio,
-#                     qkv_bias=qkv_bias,
-#                 )
-#                 for _ in range(depth)
-#             ]
-#         )
-#
-#         self.single_blocks = nn.ModuleList(
-#             [
-#                 SingleStreamBlock(
-#                     self.hidden_size,
-#                     self.num_heads,
-#                     mlp_ratio=mlp_ratio,
-#                 )
-#                 for _ in range(depth_single_blocks)
-#             ]
-#         )
-#
-#         self.final_layer = LastLayer(self.hidden_size, 1, self.out_channels)
-#
-#         if ckpt_path is not None:
-#             print('restored denoiser ckpt', ckpt_path)
-#
-#             ckpt = torch.load(ckpt_path, map_location="cpu")
-#             if 'state_dict' not in ckpt:
-#                 # deepspeed ckpt
-#                 state_dict = {}
-#                 for k in ckpt.keys():
-#                     new_k = k.replace('_forward_module.', '')
-#                     state_dict[new_k] = ckpt[k]
-#             else:
-#                 state_dict = ckpt["state_dict"]
-#
-#             final_state_dict = {}
-#             for k, v in state_dict.items():
-#                 if k.startswith('model.'):
-#                     final_state_dict[k.replace('model.', '')] = v
-#                 else:
-#                     final_state_dict[k] = v
-#             missing, unexpected = self.load_state_dict(final_state_dict, strict=False)
-#             print('unexpected keys:', unexpected)
-#             print('missing keys:', missing)
-#
-#     def forward(
-#         self,
-#         x,
-#         t,
-#         contexts,
-#         **kwargs,
-#     ) -> Tensor:
-#         cond = contexts['main']
-#         latent = self.latent_in(x)
-#
-#         vec = self.time_in(timestep_embedding(t, 256, self.time_factor).to(dtype=latent.dtype))
-#         if self.guidance_embed:
-#             guidance = kwargs.get('guidance', None)
-#             if guidance is None:
-#                 raise ValueError("Didn't get guidance strength for guidance distilled model.")
-#             vec = vec + self.guidance_in(timestep_embedding(guidance, 256, self.time_factor))
-#
-#         cond = self.cond_in(cond)
-#         pe = None
-#
-#         for block in self.double_blocks:
-#             latent, cond = block(img=latent, txt=cond, vec=vec, pe=pe)
-#
-#         latent = torch.cat((cond, latent), 1)
-#         for block in self.single_blocks:
-#             latent = block(latent, vec=vec, pe=pe)
-#
-#         latent = latent[:, cond.shape[1]:, ...]
-#         latent = self.final_layer(latent, vec)
-#         return latent
-
-
 class HunyuanDiT(nn.Module):
     def __init__(
         self,
@@ -477,6 +365,7 @@ class HunyuanDiT(nn.Module):
         depth_single_blocks: int = 9,
         qkv_bias: bool = True,
         time_factor: float = 1000,
+        dropout=0.1,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -491,6 +380,7 @@ class HunyuanDiT(nn.Module):
         self.depth_single_blocks = depth_single_blocks
         self.qkv_bias = qkv_bias
         self.time_factor = time_factor
+        self.dropout = dropout
 
         if self.context_seq_len==0 and self.depth_double_blocks:
             raise ValueError("Unconditional generation task dont need mm-dit.")
@@ -515,6 +405,7 @@ class HunyuanDiT(nn.Module):
                     self.num_heads,
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
+                    dropout=self.dropout
                 )
                 for _ in range(depth_double_blocks)
             ]
@@ -525,6 +416,7 @@ class HunyuanDiT(nn.Module):
                     self.hidden_size,
                     self.num_heads,
                     mlp_ratio=mlp_ratio,
+                    dropout=self.dropout
                 )
                 for _ in range(depth_single_blocks)
             ]
@@ -548,8 +440,10 @@ class HunyuanDiT(nn.Module):
         latent = self.latent_in(x)
 
         if self.pos_dim>0:
+            # pos_emb add to latentcode
+            # 使用wcs一阶段训练时，不接收pos输入
             pos_emb = self.pos_in(p)
-            latent = latent + pos_emb  # 位置编码直接加到latentcode上，参考了SD3
+            latent = latent + pos_emb
 
         t_emb = self.time_in(timestep_embedding(t, 256, self.time_factor).to(dtype=latent.dtype))
         cond_emb = self.cond_in(cond)

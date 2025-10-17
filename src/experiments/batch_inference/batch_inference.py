@@ -1,15 +1,14 @@
 import os
 import random
-from glob import glob
-import argparse
 import pickle
+import argparse
 import numpy as np
-
 from tqdm import tqdm
 
 import torch
 from torchvision.utils import make_grid
-
+from src.pc_utils import normalize_pointcloud
+import plotly.graph_objects as go
 from matplotlib import pyplot as plt
 from matplotlib.colors import to_hex
 
@@ -18,8 +17,6 @@ from diffusers import DDPMScheduler  # , PNDMScheduler
 from src.utils import randn_tensor, data_fields_dict
 from src.bbox_utils import bbox_deduplicate
 from src.vis import draw_bbox_geometry, draw_bbox_geometry_3D2D, get_visualization_steps
-from src.pc_utils import normalize_pointcloud
-import plotly.graph_objects as go
 
 
 
@@ -488,22 +485,6 @@ def inference_one(
             output_fp = output_fp.replace('.pkl', '_pointcloud.png'),
             # show_num=True
             )
-
-    # 以下代码已经失效，因为：data_id 在服务器上的路径变了后，不能找回data_fp了
-    # # 如果没有原本的路径data_fp, 尝试根据 data_id 找回 data_fp
-    # if data_fp is None and data_id_trainval is not None:
-    #     try:
-    #         data_id_tr = os.path.basename(data_id_trainval)
-    #         data_id_tr = os.path.join("/data/AIGP/brep_reso_256_edge_snap_with_caption/", data_id_tr)
-    #         data_fp = pickle.load(open(data_id_tr, "rb"))["data_fp"]
-    #     except FileNotFoundError:
-    #         try:
-    #             data_id_tr = os.path.basename(data_id_trainval)
-    #             data_id_tr = os.path.join("/data/AIGP/Q4/", data_id_tr)
-    #             data_fp = pickle.load(open(data_id_tr, "rb"))["data_fp"]
-    #         except FileNotFoundError:
-    #             data_fp = None
-    #             print("Without data_fp")
 
     result = {
         'surf_bbox': _surf_bbox,        # (N, 6)

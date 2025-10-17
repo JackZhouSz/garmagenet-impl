@@ -5,13 +5,14 @@ from trainer import SurfVAETrainer
 from datasets.sxd import SurfData
 
 
-def get_args_vae():    
-        
+def get_args_vae():
     parser = argparse.ArgumentParser()
 
     # Dataset configuration
     parser.add_argument('--data', type=str, default='/data/AIGP/brebrep_reso_64_edge_snap', 
-                        help='Path to data folder')  
+                        help='Path to data folder')
+    parser.add_argument('--use_data_root', action="store_true",
+                        help='If data list store absolute path, don`t use this flag.')
     parser.add_argument('--list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
                         help='Path to data list')  
     parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
@@ -20,6 +21,7 @@ def get_args_vae():
     parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
 
     # Model parameters
+    parser.add_argument("--vae_type", choices=["kl", "dc"], default="kl")
     parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
     parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
 
@@ -28,6 +30,7 @@ def get_args_vae():
     parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')  
     parser.add_argument("--gpu", type=int, nargs='+', default=[0], help="GPU IDs to use for training (default: [0])")
     parser.add_argument('--batch_size', type=int, default=512, help='input batch size')
+    parser.add_argument('--lr', type=float, default=5e-4, help='input batch size')
         
     # Logging configuration
     parser.add_argument('--train_nepoch', type=int, default=200, help='number of epochs to train for')    

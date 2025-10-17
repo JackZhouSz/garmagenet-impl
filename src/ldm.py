@@ -25,12 +25,12 @@ def get_args_ldm():
     parser.add_argument('--surfvae_2_config', type=str, default="src/cfg/config/models/vae/VAE_256_mask_L16x16x1.yaml",
                         help='Mask vae config fp')
 
-    parser.add_argument("--option", type=str, choices=['surfpos', 'surfz','surfInpainting'], default='surfpos',
+    parser.add_argument("--option", type=str, choices=['surfpos', 'surfz', 'surfz_onestage'], default='surfpos',
                         help="Choose between option [surfpos,edgepos,surfz,edgez] (default: surfpos)")
     parser.add_argument("--denoiser_type", type=str, choices=['default', 'hunyuan_dit'], default='default',
                         help="Choose ldm type.")
     parser.add_argument('--lr', type=float, default=5e-4, help='')
-    parser.add_argument('--device', type=str, default=None, help='')
+    # parser.add_argument('--device', type=str, default=None, help='')  # use --gpu instead
     parser.add_argument('--chunksize', type=int, default=256, help='Chunk size for data loading')
 
     # Training parameters
@@ -72,7 +72,9 @@ def get_args_ldm():
     parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
     parser.add_argument('--sample_mode', type=str, default='sample', choices=['mode', 'sample'], help='Encoder mode of the vae model.')
     parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
-    parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')  # TE:int HYdit:list
+    parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')
+    parser.add_argument('--pos_dim', default=None, help='Set this to -1 when training with wcs')
+    parser.add_argument('--dropout', type=float, default=0.1)
 
     # Schedular (DDPM、FlowMatchEulerDiscreteScheduler of hunyuan3d2.0)
     parser.add_argument("--scheduler", type=str, default="DDPM", choices=["DDPM", "HY_FMED"], help="")
@@ -99,11 +101,11 @@ def run(args):
         faulthandler.enable(all_threads=True)
 
 
-    # [test] ban wandb
-    if True:
-        import wandb;
-        wandb.finish();
-        wandb.init(mode="disabled")
+    # # [test] ban wandb
+    # if True:
+    #     import wandb
+    #     wandb.finish()
+    #     wandb.init(mode="disabled")
 
 
 
@@ -118,15 +120,14 @@ def run(args):
         val_dataset = SurfZData(
             args.data, args.list, validate=True, aug=False, args=args)
         ldm = SurfZTrainer(args, train_dataset, val_dataset)
-    elif args.option == "surfInpainting":
-            train_dataset = SurfInpaintingData(
-                args.data, args.list, validate=False, aug=args.data_aug, args=args)
-            val_dataset = SurfInpaintingData(
-                args.data, args.list, validate=True, aug=False, args=args)
-            ldm = SurfInpaintingTrainer2(args, train_dataset, val_dataset)
-            # ldm = SurfInpaintingTrainer2(args, train_dataset, val_dataset)
+    elif args.option == 'surfz_onestage':
+        train_dataset = SurfZ_OneStage_Data(
+            args.data, args.list, validate=False, aug=args.data_aug, args=args)
+        val_dataset = SurfZ_OneStage_Data(
+            args.data, args.list, validate=True, aug=False, args=args)
+        ldm = SurfZ_OneStage_Trainer(args, train_dataset, val_dataset)
     else:
-        assert False, 'please choose between [surfpos, surfz, edgepos, edgez]'
+        raise NotImplementedError(args.option)
 
     print('Start training...')
     

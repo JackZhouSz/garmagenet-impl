@@ -107,8 +107,8 @@ if __name__ == "__main__":
         with open(pkl_fp, "rb") as f:
             data = pickle.load(f)
 
-        surf_bbox = data.get("surf_bbox") or data.get("surf_bbox_wcs")
-        surf_uv_bbox = data.get("surf_uv_bbox") or data.get("surf_uv_bbox_wcs")
+        surf_bbox = data.get("surf_bbox") if "surf_bbox" in data else data.get("surf_bbox_wcs")
+        surf_uv_bbox = data.get("surf_uv_bbox") if "surf_uv_bbox" in data else data.get("surf_uv_bbox_wcs")
         surf_ncs = data["surf_ncs"].reshape(-1, reso, reso, 3)
         surf_uv_ncs = data["surf_uv_ncs"].reshape(-1, reso, reso, 2)
         surf_mask = data["surf_mask"].reshape(-1, reso, reso, 1).astype(np.float32) *2 -1
@@ -129,21 +129,21 @@ if __name__ == "__main__":
         surf_pos_orig = torch.tensor(np.concatenate([surf_bbox, surf_uv_bbox], axis=-1))
         visualization_steps = get_visualization_steps()
         # visualization_steps = [999, 10, 0]
-        surf_pos_noise = torch.randn(surf_pos_orig.shape)/2
+        surf_pos_noise = torch.randn(surf_pos_orig.shape)/8
 
         garmage_orig = torch.tensor(np.concatenate([surf_ncs, surf_uv_ncs, surf_mask], axis=-1))
         surf_z_orig = surf_vae_encoder(torch.tensor(garmage_orig).permute(0,3,1,2))
-        surf_z_noise = randn_tensor((n_surfs, latent_channels, latent_size, latent_size))
+        surf_z_noise = randn_tensor((n_surfs, latent_channels, latent_size, latent_size))*2
 
         img_idx = 0
 
         for t in tqdm(ddpm_scheduler.timesteps, desc="Surf-Pos+Z Denoising"):
             if t in visualization_steps:
-            # if t in [1, 0]:
+            # if t in range(10,0,-1):
                 if t > 0:
                     surf_pos_noised = ddpm_scheduler.add_noise(surf_pos_orig, surf_pos_noise, t)
-                    surf_pos_noise2 = torch.randn(surf_pos_orig.shape)/20
-                    surf_pos_noised = ddpm_scheduler.add_noise(surf_pos_noised, surf_pos_noise2, t)
+                    # surf_pos_noise2 = torch.randn(surf_pos_orig.shape) / 5000
+                    # surf_pos_noised = ddpm_scheduler.add_noise(surf_pos_noised, surf_pos_noise2, t)
                 else:
                     surf_pos_noised = surf_pos_orig
 
@@ -199,40 +199,39 @@ if __name__ == "__main__":
                     visatt_dict = {
                         "bboxmesh_opacity": 0.12,
                         # "point_size": 10,
+                        "camera_eye_z": 1.2,
                         "point_opacity": 0.8,
-                        "bboxline_width": 8
+                        "bboxline_width": 6
                     },
                 )
-                # 可视化2D点+bbox ===
-                draw_bbox_geometry(
-                    bboxes=_BBox2D_,
-                    bbox_colors=colors,
-                    points=_Point_2D_,
-                    point_masks=_surf_mask_noised_,
-                    point_colors=colors,
-                    num_point_samples=2000,
-                    all_bboxes=_BBox2D_,
-                    output_fp=os.path.join(sub_sub_output_dir2, f"{img_idx}".zfill(4) +  f"geometry_denoising_t="+f"{t}".zfill(4)+".png"),
-                    visatt_dict = {
-                        "bboxmesh_opacity": 0.15,
-                        "point_size": 10,
-                        "point_opacity": 0.8,
-                        "bboxline_width": 8,
-                        "camera_eye_z": 1.5
-                    },
-                )
-
-                # 可视化几何图 ===
-                geo_denoising = _surf_ncs_noised_
-                mask_denoising = _surf_mask_noised_
-                colors = [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, n_surfs)]
-                draw_per_panel_geo_imgs(
-                    geo_denoising.reshape(n_surfs, -1, 3),
-                    mask_denoising.reshape(n_surfs, -1),
-                    colors,
-                    pad_size=5,
-                    out_fp=os.path.join(per_panel_denoising_dir, f"{img_idx}".zfill(4) + "_t=" + f"{t}".zfill(4) + ".png"))
+                # # 可视化2D点+bbox ===
+                # draw_bbox_geometry(
+                #     bboxes=_BBox2D_,
+                #     bbox_colors=colors,
+                #     points=_Point_2D_,
+                #     point_masks=_surf_mask_noised_,
+                #     point_colors=colors,
+                #     num_point_samples=2000,
+                #     all_bboxes=_BBox2D_,
+                #     output_fp=os.path.join(sub_sub_output_dir2, f"{img_idx}".zfill(4) +  f"geometry_denoising_t="+f"{t}".zfill(4)+".png"),
+                #     visatt_dict = {
+                #         "bboxmesh_opacity": 0.15,
+                #         "point_size": 10,
+                #         "point_opacity": 0.8,
+                #         "bboxline_width": 8,
+                #         "camera_eye_z": 1.5
+                #     },
+                # )
+                #
+                # # 可视化几何图 ===
+                # geo_denoising = _surf_ncs_noised_
+                # mask_denoising = _surf_mask_noised_
+                # colors = [to_hex(plt.cm.coolwarm(i)) for i in np.linspace(0, 1, n_surfs)]
+                # draw_per_panel_geo_imgs(
+                #     geo_denoising.reshape(n_surfs, -1, 3),
+                #     mask_denoising.reshape(n_surfs, -1),
+                #     colors,
+                #     pad_size=5,
+                #     out_fp=os.path.join(per_panel_denoising_dir, f"{img_idx}".zfill(4) + "_t=" + f"{t}".zfill(4) + ".png"))
 
                 img_idx+=1
-                # import sys
-                # sys.exit(0)
