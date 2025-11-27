@@ -10,18 +10,6 @@ import numpy as np
 from src.constant import _PANEL_CLS
 
 
-def pharse_data_fp(data_fp):
-    data_fp = data_fp.replace("\\", "/")
-    if "Q1" in data_fp or "Q2" in data_fp:
-        data_fp = data_fp.split("工程数据")[1]
-        data_fp = data_fp.replace("/objs/", "/")
-    elif "Q4" in data_fp:
-        # print(f"data_fp: {data_fp}")
-        data_fp = data_fp.split("工程数据")[1]
-        data_fp = data_fp.replace("_objs", "")
-    return data_fp
-
-
 class VaeData(torch.utils.data.Dataset):
     """ Surface VAE Dataloader """
     def __init__(self,
@@ -33,8 +21,6 @@ class VaeData(torch.utils.data.Dataset):
                  chunksize=-1,
                  args=None):
         self.args = args
-
-        self.randomly_noise_geometry = args.randomly_noise_geometry
 
         self.validate = validate
         self.aug = aug
@@ -106,7 +92,7 @@ class VaeData(torch.utils.data.Dataset):
         return torch.FloatTensor(self.cache[index%len(self.cache)])
 
 
-class SurfPosData(torch.utils.data.Dataset):
+class TypologyGenData(torch.utils.data.Dataset):
     """ Surface position (3D bbox) Dataloader """
     def __init__(self, input_data, input_list, validate=False, aug=False, args=None,):
         self.args = args
@@ -123,7 +109,7 @@ class SurfPosData(torch.utils.data.Dataset):
 
         self.cache_fp = os.path.join(
             args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('ckpts', 'cache'),
-            'surfpos_%s.pkl'%('validate' if validate else 'train')
+            'typology_gen_%s.pkl'%('validate' if validate else 'train')
         )
         self.data_fields = args.data_fields
         self.padding = args.padding
@@ -152,7 +138,7 @@ class SurfPosData(torch.utils.data.Dataset):
         else:
             print('Loading %s data...'%('validation' if validate else 'training'))
             with open(input_list, 'rb') as f:
-                self.data_list = pickle.load(f)['val' if self.validate else 'train']  # [::50]
+                self.data_list = pickle.load(f)['val' if self.validate else 'train']
                 if args.use_data_root:
                     self.data_list = [os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list
                                         if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
@@ -174,6 +160,7 @@ class SurfPosData(torch.utils.data.Dataset):
 
         # Load caption
         caption = data['caption'] if 'caption' in self.data_fields else ''
+        data_fp = data["data_fp"]
 
         # Load pointcloud feature
         if 'pointcloud_feature' in self.data_fields:
@@ -182,7 +169,6 @@ class SurfPosData(torch.utils.data.Dataset):
 
                 assert self.pointcloud_sampled_dir is None
 
-                data_fp = pharse_data_fp(data["data_fp"])
                 sample_type_list = ["surface_uniform", "fps", "non_uniform"]
                 pointcloud_feature = []
                 sampled_pc_cond = []
@@ -210,7 +196,6 @@ class SurfPosData(torch.utils.data.Dataset):
                     sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
                 # Using pre-sampled pointcloud.
                 else:
-                    data_fp = pharse_data_fp(data["data_fp"])
                     pointcloud_sample_fp = sorted(glob(os.path.join(os.path.join(self.pointcloud_sampled_dir, data_fp), "*.npy")))
                     if len(pointcloud_sample_fp) == 0:
                         raise FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist.")
@@ -222,7 +207,6 @@ class SurfPosData(torch.utils.data.Dataset):
         # Load sketch feature
         if "sketch_feature" in self.data_fields:
             if 'sketch_feature' not in data or data['sketch_feature'] is None:
-                data_fp = pharse_data_fp(data["data_fp"])
                 sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
                 if len(sketch_feature_fp) == 0:
                     FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist. This may because no corresponding image.")
@@ -381,7 +365,7 @@ class SurfPosData(torch.utils.data.Dataset):
         return (surf_pos, pad_mask, surf_cls, caption, pointcloud_feature, sketch_feature)
 
 
-class SurfZData(torch.utils.data.Dataset):
+class GeometryGenData(torch.utils.data.Dataset):
     """ Surface latent geometry Dataloader """
     def __init__(
             self,
@@ -405,7 +389,7 @@ class SurfZData(torch.utils.data.Dataset):
 
         self.cache_fp = os.path.join(
             args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('log', 'cache'),
-            'surfz_%s.pkl'%('validate' if validate else 'train')
+            'geometry_gen__%s.pkl'%('validate' if validate else 'train')
         )
         print("dataset init ")
 
@@ -428,7 +412,7 @@ class SurfZData(torch.utils.data.Dataset):
                 raise FileNotFoundError(f"sketch_feature_dir {self.sketch_feature_dir} not exists")
 
         print('Loading %s data...'%('validation' if validate else 'training'))
-        with open(input_list, 'rb') as f: self.data_list = pickle.load(f)['val' if self.validate else 'train'] # [::50]
+        with open(input_list, 'rb') as f: self.data_list = pickle.load(f)['val' if self.validate else 'train']
         if args.use_data_root:
             self.data_list = [os.path.join(self.data_root, os.path.basename(x)) for x in self.data_list
                               if os.path.exists(os.path.join(self.data_root, os.path.basename(x)))]
@@ -439,14 +423,7 @@ class SurfZData(torch.utils.data.Dataset):
         # Config data chunks
         if args.chunksize > 0:
             assert NotImplementedError
-            # self.chunksize = min(args.chunksize, len(self.data_list))
-            # if self.validate: self.chunksize = self.chunksize // 8
-            # self.data_chunks = [self.data_list[i:i+self.chunksize] for i in range(0, len(self.data_list), self.chunksize)]
-            # self.chunk_idx = -1
-            # print('Data chunks: num_chunks=%d, chunksize=%d.'%(len(self.data_chunks), self.chunksize))
-            # self.__next_chunk__(lazy=False)
         else:
-            # self.__load_one__(self.data_list[0])
             self.load_one_to_init()
 
     def load_one_to_init(self):
@@ -477,7 +454,6 @@ class SurfZData(torch.utils.data.Dataset):
         if not hasattr(self, 'num_classes'): self.num_classes = len(_PANEL_CLS) if 'surf_cls' in self.data_fields else 0
 
     def __len__(self):
-        # return len(self.data_list) * 5 if not self.validate else len(self.data_chunks[self.chunk_idx])
         return len(self.data_list)
 
     def init_encoder(self, z_encoder, cond_encoder, z_scaled=None):
@@ -489,7 +465,6 @@ class SurfZData(torch.utils.data.Dataset):
 
         if z_scaled is not None: self.z_scaled = z_scaled
         if not hasattr(self, 'cache'): self.__load_and_encode_all__()
-        # elif 'latent' not in self.cache: self.__encode_chunk__()
 
     def update(self): self.__next_chunk__(lazy=True)
 
@@ -527,6 +502,7 @@ class SurfZData(torch.utils.data.Dataset):
 
         # Load caption
         caption = data['caption'] if 'caption' in self.data_fields else ''
+        data_fp = data["data_fp"]
 
         # Load pointcloud feature
         if 'pointcloud_feature' in self.data_fields:
@@ -535,7 +511,6 @@ class SurfZData(torch.utils.data.Dataset):
 
                 assert self.pointcloud_sampled_dir is None
 
-                data_fp = pharse_data_fp(data["data_fp"])
                 sample_type_list = ["surface_uniform", "fps", "non_uniform"]
                 pointcloud_feature = []
                 sampled_pc_cond = []
@@ -563,7 +538,6 @@ class SurfZData(torch.utils.data.Dataset):
                     sampled_pc_cond = valid_pts[np.random.randint(0, len(valid_pts), size=2048)]
                 # Using pre-sampled pointcloud.
                 else:
-                    data_fp = pharse_data_fp(data["data_fp"])
                     pointcloud_sample_fp = sorted(glob(os.path.join(os.path.join(self.pointcloud_sampled_dir, data_fp), "*.npy")))
                     if len(pointcloud_sample_fp) == 0:
                         raise FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist.")
@@ -575,7 +549,6 @@ class SurfZData(torch.utils.data.Dataset):
         # Load sketch feature
         if "sketch_feature" in self.data_fields:
             if 'sketch_feature' not in data or data['sketch_feature'] is None:
-                data_fp = pharse_data_fp(data["data_fp"])
                 sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
                 if len(sketch_feature_fp) == 0:
                     FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist. This may because no corresponding image.")
@@ -656,39 +629,6 @@ class SurfZData(torch.utils.data.Dataset):
             raise ValueError('Invalid padding mode: %s'%self.padding)
 
         return surf_pos, surf_latents, surf_cls, pad_mask
-
-    # def __encode_chunk__(self):
-    #
-    #     print('Encode chunk [%03d/%03d]: '%(self.chunk_idx, len(self.data_chunks)), self.cache['surf_pos'].shape)
-    #
-    #     if not (hasattr(self, 'z_encoder') and self.z_encoder is not None): return
-    #
-    #     try:
-    #         z_device = self.z_encoder.module.parameters().__next__().device
-    #     except:
-    #         z_device = self.z_encoder.parameters().__next__().device
-    #
-    #     _surf_ncs = self.cache['surf_ncs']
-    #     _surf_ncs = _surf_ncs.permute(0, 3, 1, 2).to(z_device)
-    #
-    #     _surf_latents = []
-    #     _encode_bsz = 256
-    #
-    #     with torch.no_grad():
-    #         if self.padding == 'zerolatent' and not hasattr(self, 'zero_latent'):
-    #             self.zero_latent = self.z_encoder(torch.zeros_like(_surf_ncs[0:1, ...])).flatten(start_dim=1).detach().cpu()
-    #         for i in range(0, len(_surf_ncs), _encode_bsz):
-    #             z = self.z_encoder(_surf_ncs[i:i+_encode_bsz])
-    #             _surf_latents.append(z.flatten(start_dim=1))
-    #
-    #     self.cache['latent'] = torch.cat(_surf_latents, dim=0).detach().cpu()
-    #     del self.cache['surf_ncs']
-    #
-    #     if not hasattr(self, 'z_scaled'):
-    #         self.z_scaled = 1.0 / (self.cache['latent'].std() + 1e-6)
-    #         print("Initialize z_scaled: ", self.z_scaled)
-    #
-    #     print('Encode all data: ', self.cache['latent'].shape, self.cache.keys())
 
     def __load_and_encode_all__(self):
 
@@ -790,74 +730,6 @@ class SurfZData(torch.utils.data.Dataset):
 
         print('Encode all data: ', self.cache['latent'].shape, self.cache['surf_pos'].shape)
 
-    # def __next_chunk__(self, lazy=False):
-    #
-    #     if not hasattr(self, 'data_chunks'): return
-    #     if lazy and np.random.rand() < 0.5: return
-    #
-    #     chunk_idx = (self.chunk_idx + 1) % len(self.data_chunks)
-    #     if self.chunk_idx == chunk_idx: return
-    #     else: self.chunk_idx = chunk_idx
-    #     print('Switching to chunk %d/%d'%(self.chunk_idx, len(self.data_chunks)))
-    #
-    #     if hasattr(self, 'cache'): del self.cache
-    #     torch.cuda.empty_cache()
-    #
-    #     cache = {
-    #         'data_id': [],
-    #         'surf_pos': [],
-    #         'surf_ncs': [],
-    #         'latent': [],
-    #         'surf_cls': [],
-    #         'caption': [],
-    #         'pointcloud_feature': [],
-    #         'sampled_pc_cond': [],
-    #         'sketch_feature': [],
-    #         'item_idx': [],  # start and end index of each item in the cache
-    #         'data_fp': []
-    #     }
-    #     start_idx, end_idx = 0, 0
-    #
-    #     for uid in tqdm(self.data_chunks[self.chunk_idx]):
-    #         data_fp = uid
-    #
-    #         try:
-    #             surf_pos, surf_ncs, surf_cls, pointcloud_feature, sampled_pc_cond, sketch_feature, caption, data_fp_orig = self.__load_one__(data_fp)
-    #
-    #             start_idx = end_idx
-    #             end_idx = start_idx + surf_pos.shape[0]
-    #
-    #             cache['surf_pos'].append(surf_pos)
-    #             cache['surf_ncs'].append(surf_ncs)
-    #             cache['surf_cls'].append(surf_cls)
-    #             cache['data_id'].append(uid)
-    #             cache['caption'].append(caption)
-    #             cache['pointcloud_feature'].append(pointcloud_feature)
-    #             cache['sampled_pc_cond'].append(sampled_pc_cond)
-    #             cache["sketch_feature"].append(sketch_feature)
-    #             cache['item_idx'].append((start_idx, end_idx))
-    #             cache['data_fp'].append(data_fp_orig)
-    #
-    #         except Exception as e:
-    #             print(f"Error loading {data_fp}: {e}")
-    #             continue
-    #
-    #     cache['surf_pos'] = torch.cat(cache['surf_pos'], dim=0)
-    #     cache['surf_ncs'] = torch.cat(cache['surf_ncs'], dim=0)
-    #     cache['surf_cls'] = torch.cat(cache['surf_cls'], dim=0)
-    #     if "pointcloud_feature" in self.data_fields:
-    #         cache["pointcloud_feature"] = torch.cat(cache["pointcloud_feature"], dim=0)
-    #         cache['sampled_pc_cond'] = np.stack(cache['sampled_pc_cond'], axis=0)
-    #     if "sketch_feature" in self.data_fields:
-    #         cache["sketch_feature"] = torch.cat(cache["sketch_feature"], dim=0)
-    #
-    #     self.cache = cache
-    #     self.__encode_chunk__()
-    #
-    #     print('Load chunk [%03d/%03d]: '%(self.chunk_idx, len(self.data_chunks)))
-    #
-    #     return cache
-
     def __getitem__(self, index):
 
         start_idx, end_idx = self.cache['item_idx'][index%len(self.cache['item_idx'])]
@@ -874,7 +746,6 @@ class SurfZData(torch.utils.data.Dataset):
             surf_pos, surf_latents, surf_cls)
 
         if caption:
-            # print('*** original caption: ', caption)
             caption = [x.strip().lower() for x in caption.split(',') if x.strip().lower() != 'dress']
             random.shuffle(caption)
             if np.random.rand() > 0.5:
@@ -883,7 +754,6 @@ class SurfZData(torch.utils.data.Dataset):
 
             caption = ', '.join(caption)
 
-            # print('*** new caption: ', caption)
         if  'pointcloud_feature' in self.data_fields:
             if "pccond_item_idx" in self.cache:
                 pointcloud_feature = self.cache['pointcloud_feature'][pccond_start_idx:pccond_end_idx, ...]
@@ -900,7 +770,7 @@ class SurfZData(torch.utils.data.Dataset):
         )
 
 
-class SurfZ_OneStage_Data(SurfZData):
+class OneStage_Gen_Data(GeometryGenData):
     def __init__(
             self,
             input_data,
@@ -912,5 +782,5 @@ class SurfZ_OneStage_Data(SurfZData):
         super().__init__(input_data, input_list, validate, aug, args)
         self.cache_fp = os.path.join(
             args.cache_dir if args.cache_dir else args.surfvae.replace('.pt', '').replace('log', 'cache'),
-            'one_stage_z_bbox_%s.pkl'%('validate' if validate else 'train')
+            'one_stage_gen_%s.pkl'%('validate' if validate else 'train')
         )

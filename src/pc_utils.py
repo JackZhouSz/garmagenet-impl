@@ -43,3 +43,14 @@ def normalize_pointcloud(pc: np.ndarray, range=1) -> np.ndarray:
 
     pc_normalized = pc_centered / (scale / 2.0) * range
     return pc_normalized
+
+
+def garmageset_normalize(point):
+    global_scale = 2000.0
+    if point.shape[-1]==3:
+        global_offset = (0., 1000., 0.)
+    elif point.shape[-1]==2:
+        global_offset = (0., 1000.)
+
+    point_rtn = (point - global_offset) / (global_scale * 0.5)
+    return point_rtn

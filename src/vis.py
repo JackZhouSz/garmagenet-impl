@@ -535,7 +535,6 @@ def draw_per_panel_geo_imgs(surf_ncs, surf_mask, colors, pad_size=5, out_dir='')
     _surf_ncs = surf_ncs.reshape(n_surfs, reso, reso, 3)
     _surf_mask = surf_mask.reshape(n_surfs, reso, reso, 1)
 
-    # 限定图像范围防止越界
     _surf_ncs[_surf_ncs>1] = 1
     _surf_ncs[_surf_ncs<-1] = -1
 

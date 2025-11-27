@@ -67,7 +67,6 @@ def _pairwise_CD(sample_pcs, ref_pcs, batch_size):
         sample_batch = sample_pcs[sample_b_start]
 
         cd_lst = []
-        emd_lst = []
         for ref_b_start in range(0, N_ref, batch_size):
             ref_b_end = min(N_ref, ref_b_start + batch_size)
             ref_batch = ref_pcs[ref_b_start:ref_b_end]
@@ -258,21 +257,19 @@ def load_garment_pc(shape_path, sample_num=2000):
 
 
     pc = np.concatenate(sample_list, axis=0)
-    # pc = styleXD_denormalize(pc)
-    # from src.vis import pointcloud_visualize
-    # pointcloud_visualize(pc)
     return pc
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sample_dir", type=str, default='/home/Ex1/画论文teasor的素材/生成的结果/第4批/surfz_e230000_1k')
-    parser.add_argument("--test_dir", type=str, default='/home/Ex1/Datasets/S3D/brep_reso_256_edge_snap_with_caption')
-    parser.add_argument("--data_list", default="/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/gen_data_list/output/data_list.pkl")
-    parser.add_argument("--cache_dir", type=str, default='log/pc_metric/cache')
+    parser.add_argument("--sample_dir", type=str, default=None, help="Generated data dir.")
+    parser.add_argument("--test_dir", type=str, default=None, help="GT garmageset.")
+    parser.add_argument("--data_list", default=None, help="Datalist used to train.")
+    parser.add_argument("--cache_dir", type=str, default='Cache generate before training.')
 
-    parser.add_argument("--n_sample", type=int, default=128)
-    parser.add_argument("--n_test", type=int, default=128)
+    parser.add_argument("--n_sample", type=int, default=128, help="Generated data sample num.")
+    parser.add_argument("--n_test", type=int, default=128, help="GT data sample num.")
+
     parser.add_argument("--times", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=128)
     args = parser.parse_args()

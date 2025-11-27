@@ -1,51 +1,45 @@
 import os
 import argparse
 
-from trainer import SurfVAETrainer
-from datasets.sxd import VaeData
+from trainer import VAETrainer
+from datasets.garmage import VaeData
 
 
 def get_args_vae():
     parser = argparse.ArgumentParser()
 
-    # Dataset configuration
-    parser.add_argument('--data', type=str, default='/data/AIGP/brebrep_reso_64_edge_snap', 
-                        help='Path to data folder')
-    parser.add_argument('--use_data_root', action="store_true",
-                        help='If data list store absolute path, don`t use this flag.')
-    parser.add_argument('--list', type=str, default='data_process/stylexd_data_split_reso_64.pkl', 
-                        help='Path to data list')  
-    parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
-    parser.add_argument("--randomly_noise_geometry",  action='store_true', help='Randomly set geometry channel as noise.')
-    parser.add_argument('--data_fields', nargs='+', default=['surf_ncs'], help="Data fields to encode.")
-    parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
-
-    # Model parameters
-    parser.add_argument("--vae_type", choices=["kl", "dc"], default="kl")
-    parser.add_argument('--block_dims', nargs='+', type=int, default=[32,64,64,128], help='Latent dimension of each block of the UNet model.')
-    parser.add_argument('--latent_channels', type=int, default=8, help='Latent channels of the vae model.')
-
     # Training parameters
+    parser.add_argument('--expr', type=str, default="surface_vae", help='Experiment name')
+    parser.add_argument('--log_dir', type=str, default="log", help='Name of the log folder.')
     parser.add_argument("--finetune",  action='store_true', help='Finetune from existing weights')
-    parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')  
+    parser.add_argument("--weight",  type=str, default=None, help='Weight path when finetuning')
     parser.add_argument("--gpu", type=int, nargs='+', default=[0], help="GPU IDs to use for training (default: [0])")
-    parser.add_argument('--batch_size', type=int, default=512, help='input batch size')
-    parser.add_argument('--lr', type=float, default=5e-4, help='input batch size')
-        
-    # Logging configuration
-    parser.add_argument('--train_nepoch', type=int, default=200, help='number of epochs to train for')    
+    parser.add_argument('--batch_size', type=int, default=512, help='Batch size.')
+    parser.add_argument('--lr', type=float, default=5e-4, help='Learning rate')
+
+    parser.add_argument('--train_nepoch', type=int, default=200, help='number of epochs to train for')
     parser.add_argument('--save_nepoch', type=int, default=50, help='number of epochs to save model')
     parser.add_argument('--test_nepoch', type=int, default=10, help='number of epochs to test model')
 
-    # Save dirs and reload
-    parser.add_argument('--expr', type=str, default="surface_vae", help='experiment name')
-    parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
+    # Dataset configuration
+    parser.add_argument('--data', type=str, default=None, required=True, help='Path to data folder')
+    parser.add_argument('--use_data_root', action="store_true", help='If data list store relative path, use this flag.')
+    parser.add_argument('--list', type=str, default=None, required=True, help='Path to the datalist file.')
+    parser.add_argument("--data_aug",  action='store_true', help='Use data augmentation')
+    parser.add_argument('--data_fields', nargs='+', default=['surf_ncs', 'surf_mask'], help="Data fields to encode.")
+    parser.add_argument('--chunksize', type=int, default=-1, help='Chunk size for data loading')
+
+    # Model parameters
+    parser.add_argument("--vae_type", choices=["kl"], default="kl")
+    parser.add_argument('--block_dims', nargs='+', type=int, default=[16,32,32,64,64,128], help='Block dimensions of the VAE model.')
+    parser.add_argument('--latent_channels', type=int, default=1, help='Latent channels of the vae model.')
 
     args = parser.parse_args()
     
     # saved folder
     args.log_dir = f'{args.log_dir}/{args.expr}'
-    
+    if not os.path.exists(args.log_dir): os.makedirs(args.log_dir)
+
     return args
 
 
@@ -59,7 +53,7 @@ def run(args):
     val_dataset = VaeData(
         args.data, args.list, data_fields=args.data_fields, 
         validate=True, aug=False, chunksize=args.chunksize, args=args)
-    vae = SurfVAETrainer(args, train_dataset, val_dataset)
+    vae = VAETrainer(args, train_dataset, val_dataset)
 
     # Main training loop
     print('Start training...')
@@ -80,11 +74,5 @@ def run(args):
            
 
 if __name__ == "__main__":
-    
     args = get_args_vae()
-
-
-    if not os.path.exists(args.log_dir):
-        os.makedirs(args.log_dir)
-    
     run(args)

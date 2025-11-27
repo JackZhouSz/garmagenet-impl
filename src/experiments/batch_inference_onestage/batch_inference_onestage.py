@@ -1,6 +1,5 @@
 import os
 import pickle
-import random
 import argparse
 from tqdm import tqdm
 
@@ -78,7 +77,6 @@ def pointcloud_condition_visualize(vertices: np.ndarray, output_fp=None):
     )
     RESO = 800
     if output_fp:
-        # fig.write_html(output_fp.replace(".pkl", "") + "_pcCond_vis.html")
         fig.write_image(output_fp.replace(".pkl", "_pcCondOrig.png"), width=RESO, height=RESO, scale=2.5)
 
 
@@ -140,30 +138,6 @@ def init_models(args):
     else:
         condition_dim = -1
 
-    # Load SurfPos Net ===
-    if args.surfpos :
-        if args.surfpos_type == 'default':
-            from src.network import SurfPosNet
-            surfpos_model = SurfPosNet(
-                p_dim=10,
-                condition_dim=condition_dim,
-                num_cf=-1
-            )
-        elif args.surfpos_type == 'hunyuan_dit':
-            from src.network import SurfPosNet_hunyuandit
-            surfpos_model = SurfPosNet_hunyuandit(
-                p_dim=10,
-                condition_dim=condition_dim,
-                num_cf=-1
-            )
-        else:
-            raise NotImplementedError
-        print(f"SurfPos LDM type: {args.surfpos_type}")
-        surfpos_model.load_state_dict(torch.load(args.surfpos)['model_state_dict'])
-        surfpos_model.to(device).eval()
-    else:
-        surfpos_model = None
-
     # Initialize network
     model_p_dim = -1
     model_z_dim = 0
@@ -171,10 +145,10 @@ def init_models(args):
         model_z_dim += data_fields_dict[k]["len"]
 
     # Load SurfZ Net ===
-    if args.surfz_type == 'default':
-        from src.network import SurfZNet
+    if args.denoiser_type == 'default':
+        from src.network import GeometryGenNet
         print("Default Transformer-Encoder denoiser.")
-        surfz_model = SurfZNet(
+        onestage_gen_model = GeometryGenNet(
             p_dim=model_p_dim,
             z_dim=model_z_dim,
             num_heads=12,
@@ -183,21 +157,18 @@ def init_models(args):
             num_layer=args.num_layer,
             num_cf=-1
         )
-    elif args.surfz_type == 'hunyuan_dit':
-        raise NotImplementedError
     else:
         raise NotImplementedError
-    print(f"SurfZ LDM type: {args.surfz_type}")
-    surfz_model.load_state_dict(torch.load(args.surfz)['model_state_dict'])
-    surfz_model.to(device).eval()
+
+    onestage_gen_model.load_state_dict(torch.load(args.onestage_gen)['model_state_dict'])
+    onestage_gen_model.to(device).eval()
 
     print('[DONE] Models initialized.')
 
     return {
         'surf_vae': surf_vae,
         'ddpm_scheduler': ddpm_scheduler,
-        'surfpos_model': surfpos_model,
-        'surfz_model': surfz_model,
+        'onestage_gen_model': onestage_gen_model,
         'text_enc': text_enc,
         'pointcloud_enc': pointcloud_enc,
         'sketch_enc': sketch_enc,
@@ -218,13 +189,12 @@ def inference_one(
         vis=False,
         data_fp=None,
         data_id_trainval=None,
-        # save_denoising=False,
 ):
     max_surf = 32
     device = args.device
 
     ddpm_scheduler = models['ddpm_scheduler']
-    surfz_model = models['surfz_model']
+    onestage_gen_model = models['onestage_gen_model']
     surf_vae = models['surf_vae']
     text_enc = models['text_enc']
 
@@ -243,15 +213,17 @@ def inference_one(
     if condition_emb is not None:
         condition_emb = condition_emb.to(device)
 
+    surf_bbox, surf_uv_bbox = None, None
+
     # SurfZ Denoising ---------------------------------------------------------------
-    latent_len = surfz_model.z_dim
+    latent_len = onestage_gen_model.z_dim
     latent = randn_tensor((1, max_surf, latent_len), device=device)
     _surf_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
     ddpm_scheduler.set_timesteps(1000//10)
     with torch.no_grad():
         for t in tqdm(ddpm_scheduler.timesteps, desc="Surf-Z Denoising"):
             timesteps = t.reshape(-1).to(device)
-            pred = surfz_model(
+            pred = onestage_gen_model(
                 surfZ=latent,
                 timesteps=timesteps,
                 surfPos=None,
@@ -332,16 +304,18 @@ def inference_one(
         else:
             raise NotImplementedError
 
+    # get 3d bbox
     if surf_wcs is not None and surf_bbox is None:
         surf_bbox = [np.concatenate(get_bbox(surf_wcs[i][surf_ncs_mask[i]])) for i in range(n_surfs)]
         surf_bbox = np.stack(surf_bbox)
     elif surf_wcs is None and surf_bbox is not None:
         surf_wcs = _denormalize_pts(surf_ncs, surf_bbox)
 
-    # === get 2d bbox ===
-    surf_uv_bbox = np.zeros((n_surfs, 4))
-    surf_uv_bbox[:, :2] = surf_uv_bbox[:,:2] - surf_uv_bbox_scale/2
-    surf_uv_bbox[:, 2:] = surf_uv_bbox[:,2:] + surf_uv_bbox_scale/2
+    # get 2d bbox
+    if surf_uv_bbox is None and surf_uv_bbox_scale is not None:
+        surf_uv_bbox = np.zeros((n_surfs, 4))
+        surf_uv_bbox[:, :2] = surf_uv_bbox[:,:2] - surf_uv_bbox_scale/2
+        surf_uv_bbox[:, 2:] = surf_uv_bbox[:,2:] + surf_uv_bbox_scale/2
 
     # plotly visualization
     if vis:
@@ -410,7 +384,6 @@ def run(args):
                 pointcloud_features = pointcloud_features[choice]
                 sampled_pc_cond = data_cache["sampled_pc_cond"][pccond_idx[0]:pccond_idx[1]]
                 sampled_pc_cond = sampled_pc_cond[choice]
-                # [TODO] search original data and sample pointcloud as condition.
             else:
                 pointcloud_features = data_cache["pointcloud_feature"][sample_data_idx]
                 sampled_pc_cond = data_cache["sampled_pc_cond"][sample_data_idx]
@@ -444,7 +417,6 @@ def run(args):
             vis = True,
             data_fp = data_fp,
             data_id_trainval = data_id_trainval,
-            # save_denoising = args.save_denoising,
         )
 
     print('[DONE]')
@@ -456,43 +428,34 @@ if __name__ == "__main__":
     # path configuration
     parser.add_argument(
         '--vae', type=str,
-        default='/data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e550.pt',
+        default=None,
         help='Path to VAE model')
     parser.add_argument(
-        '--surfpos', type=str,
+        '--onestage_gen', type=str,
         default=None,
-        help='Path to SurfZ model')
+        help='Path to onestage_gen model')
     parser.add_argument(
-        "--surfpos_type", type=str,
-        choices=['default', 'hunyuan_dit'], default='default',
-        help="Choose ldm type.")
-    parser.add_argument(
-        '--surfz', type=str,
-        default='/data/lsr/models/style3d_gen/surf_z/stylexd_surfz_xyzuv_mask_latent1_mode/ckpts/surfz_e230000.pt',
-        help='Path to SurfZ model')
-    parser.add_argument(
-        "--surfz_type", type=str,
-        choices=['default', 'hunyuan_dit'], default='default',
-        help="Choose ldm type.")
+        "--denoiser_type",
+        type=str, choices=['default'],
+        default='default', help="Choose ldm type.")
     parser.add_argument(
         '--cache', type=str,
-        default='/data/lsr/models/style3d_gen/surf_vae/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/cache/vae_e550/encoder_mode/surfpos_validate.pkl',
+        default=None,
         help='Path to cache file')
     parser.add_argument(
-        '--output', type=str, default='generated/surfz_e230000',
+        '--output', type=str, default='generated',
         help='Path to output directory')
-    parser.add_argument('--save_denoising', action="store_true", help='Save garmage during denoising.')
-    parser.add_argument('--garmage_data_fields', nargs='+', type=str, default=[], help='Image data channels.')
-    parser.add_argument('--latent_data_fields', nargs='+', type=str, default=[], help='Image data channels.')
-    parser.add_argument('--block_dims', nargs='+', type=int, default=[16,32,32,64,64,128], help='Latent dimension of each block of the UNet model.')
+    parser.add_argument('--garmage_data_fields', nargs='+', type=str, default=[])
+    parser.add_argument('--latent_data_fields', nargs='+', type=str, default=[])
+    parser.add_argument('--block_dims', nargs='+', type=int, default=[16,32,32,64,64,128], help='Block dimensions of the VAE model.')
     parser.add_argument('--latent_channels', type=int, default=1, help='Latent channels of the vae model.')
-    parser.add_argument('--img_channels', type=int, default=6 , help='Latent dimension of each block of the UNet model.')
-    parser.add_argument('--reso', type=int, default=256, help='Sample size of the vae model.')
-    parser.add_argument("--padding", type=str, default="repeat", choices=["repeat", "zero"], help='Padding type during surfPos training.')
+    parser.add_argument('--img_channels', type=int, default=4)
+    parser.add_argument('--reso', type=int, default=256)
+    parser.add_argument("--padding", type=str, default="zero", choices=["repeat", "zero"])
     parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
     parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')  # TE:int HYdit:list
-    parser.add_argument('--pos_dim', default=10, type=int, help='Set this to -1 when training with wcs')
-    parser.add_argument('--text_encoder', type=str, default=None, choices=[None, 'CLIP', 'T5', 'GME'], help='Text encoder type.')
+    parser.add_argument('--pos_dim', default=-1, type=int, help='Set this to -1 when training with wcs')
+    parser.add_argument('--text_encoder', type=str, default=None, choices=[None, 'CLIP'], help='Text encoder type.')
     parser.add_argument('--pointcloud_encoder', type=str, default=None, choices=[None, 'POINT_E'], help='Pointcloud encoder type.')
     parser.add_argument('--sketch_encoder', type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H"], help='Sketch encoder type.')
 

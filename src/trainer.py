@@ -12,11 +12,8 @@ from src.utils import get_wandb_logging_meta
 from src.bbox_utils import bbox_deduplicate
 from src.bbox_utils import get_diff_map, bbox_2d_iou, bbox_3d_iou, bbox_l2_distance
 
-def steps_per_epoch(L, B):
-    return math.ceil(L / B)
 
-class SurfVAETrainer():
-    """ Surface VAE Trainer """
+class VAETrainer():
     def __init__(self, args, train_dataset, val_dataset):
         # Initilize model and load to gpu
         self.iters = 0
@@ -76,11 +73,7 @@ class SurfVAETrainer():
         else:
             raise NotImplementedError
 
-        self.scaler = torch.cuda.amp.GradScaler(
-            init_scale=2.0**14,
-            growth_factor=1.5, 
-            growth_interval=20000 * steps_per_epoch(len(self.train_dataset), args.batch_size)
-        )
+        self.scaler = torch.cuda.amp.GradScaler()
 
         # Initialize wandb
         run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
@@ -142,7 +135,8 @@ class SurfVAETrainer():
                     raise NotImplementedError
 
                 # Update model
-                self.scaler.scale(total_loss).backward()
+                with torch.autograd.set_detect_anomaly(True):
+                    self.scaler.scale(total_loss).backward()
                 nn.utils.clip_grad_norm_(self.network_params, max_norm=5.0)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
@@ -270,8 +264,8 @@ def get_condition_dim(args, self):
     return condition_dim
 
 
-class SurfPosTrainer():
-    """ Surface Position Trainer (3D bbox) """
+class TypologyGenTrainer():
+    """ Garment Typology Trainer (for 3D bbox generation) """
     def __init__(self, args, train_dataset, val_dataset):
         # Initilize model and load to gpu
         self.iters = 0
@@ -288,8 +282,6 @@ class SurfPosTrainer():
         self.val_dataset = val_dataset
 
         self.bbox_scaled = args.bbox_scaled
-
-        self.denoiser_type = args.denoiser_type
 
         # Initialize condition encoder
         if args.text_encoder is not None:
@@ -311,22 +303,13 @@ class SurfPosTrainer():
         self.pos_dim = train_dataset.pos_dim
 
         # Initialize network
-        if self.denoiser_type == "default":
+        if args.denoiser_type == "default":
             print("Default Transformer-Encoder denoiser.")
-            model = SurfPosNet(
+            model = TypologyGenNet(
                 p_dim=self.pos_dim * 2,
                 embed_dim=args.embed_dim,
                 condition_dim=self.condition_dim,
                 num_cf=train_dataset.num_classes)
-        elif self.denoiser_type == "hunyuan_dit":
-            print("Hunyuan2.0 Dit denoiser.")
-            model = SurfPosNet_hunyuandit(
-                p_dim=self.pos_dim * 2,
-                embed_dim=args.embed_dim,
-                condition_dim=self.condition_dim,
-                num_cf=train_dataset.num_classes,
-                num_layer=args.num_layer
-            )
         else:
             raise NotImplementedError
 
@@ -365,11 +348,7 @@ class SurfPosTrainer():
             weight_decay=1e-6,
             eps=1e-08,
         )
-        self.scaler = torch.cuda.amp.GradScaler(
-            init_scale=2.0**14,
-            growth_factor=1.5, 
-            growth_interval=20000 * steps_per_epoch(len(self.train_dataset), args.batch_size)
-        )
+        self.scaler = torch.cuda.amp.GradScaler()
         if args.finetune:
             if "optimizer" in state_dict:
                 self.optimizer.load_state_dict(state_dict["optimizer"])
@@ -670,12 +649,12 @@ class SurfPosTrainer():
             'bbox_scaled': self.bbox_scaled,
             'optimizer': self.optimizer.state_dict(),
             "scaler": self.scaler.state_dict()
-        }, os.path.join(ckpt_log_dir, f'surfpos_e{self.epoch:04d}.pt'))
+        }, os.path.join(ckpt_log_dir, f'typology_e{self.epoch:04d}.pt'))
         return
 
 
-class SurfZTrainer():
-    """ Surface Latent Geometry Trainer. """
+class GeometryGenTrainer():
+    """ Garment Geometry Trainer (for Latent Geometry generation) """
     def __init__(self, args, train_dataset, val_dataset):
         self.args = args
 
@@ -747,25 +726,13 @@ class SurfZTrainer():
         # Initialize network
         if args.denoiser_type == "default":
             print("Default Transformer-Encoder denoiser.")
-            model = SurfZNet(
+            model = GeometryGenNet(
                 p_dim=self.pos_dim*2,
                 z_dim=(self.sample_size//(2**(len(args.block_dims)-1)))**2 * self.latent_channels,
                 num_heads=12,
                 embed_dim=args.embed_dim,
                 condition_dim=self.condition_dim,
                 num_layer=args.num_layer,
-                num_cf=train_dataset.num_classes
-                )
-        elif args.denoiser_type == "hunyuan_dit":
-            print("Hunyuan2.0 Dit denoiser.")
-            model = SurfZNet_hunyuandit(
-                p_dim=self.pos_dim*2,
-                z_dim=(self.sample_size//(2**(len(args.block_dims)-1)))**2 * self.latent_channels,
-                num_heads=12,
-                embed_dim=args.embed_dim,
-                condition_dim=self.condition_dim,
-                num_layer=args.num_layer,
-                dropout=args.dropout,
                 num_cf=train_dataset.num_classes
                 )
         else:
@@ -809,22 +776,8 @@ class SurfZTrainer():
                 beta_end=0.02,
                 clip_sample=False,
             )
-        elif args.scheduler == "HY_FMED":
-            self.scheduler_type = 'HY_FMED'
-            from src.models.denoisers.dit_hunyuan_2.schedulers import FlowMatchEulerDiscreteScheduler
-            from src.models.denoisers.dit_hunyuan_2.transport import create_transport
-
-            # transport用于采样t、计算损失
-            self.transport = create_transport(
-                path_type='Linear',
-                prediction="velocity",
-                train_sample_type="uniform"
-            )
-
-            self.noise_scheduler = FlowMatchEulerDiscreteScheduler(
-                num_train_timesteps = 1000,
-                shift=args.scheduler_shift,
-            )
+        else:
+            raise NotImplementedError
 
         # Initialize optimizer
         self.network_params = list(self.model.parameters())
@@ -835,11 +788,7 @@ class SurfZTrainer():
             weight_decay=1e-6,
             eps=1e-08,
         )
-        self.scaler = torch.cuda.amp.GradScaler(
-            init_scale=2.0**14,
-            growth_factor=1.5, 
-            growth_interval=20000 * steps_per_epoch(len(self.train_dataset), args.batch_size)
-        )
+        self.scaler = torch.cuda.amp.GradScaler()
         if args.finetune:
             if "optimizer" in state_dict:
                 self.optimizer.load_state_dict(state_dict["optimizer"])
@@ -931,16 +880,6 @@ class SurfZTrainer():
 
                     # Loss
                     total_loss = self.loss_fn(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask])
-                elif self.scheduler_type == "HY_FMED":
-                    x1 = surfZ
-
-                    t, x0, x1 = self.transport.sample(x1)
-                    t, xt, ut = self.transport.path_sampler.plan(t, x0, x1)
-
-                    surfZ_pred = self.model(xt, t, surfPos, surf_mask, surf_cls, condition_emb, is_train=True)
-
-                    # Loss
-                    total_loss = self.transport.training_losses(surfZ_pred[~surf_mask], xt[~surf_mask], ut[~surf_mask])["loss"].mean()
                 else:
                     raise NotImplementedError
 
@@ -1034,15 +973,6 @@ class SurfZTrainer():
                             surfZ_pred = self.model(surfZ_diffused, timesteps, surfPos, surf_mask, surf_cls, condition_emb)
 
                         loss = mse_loss(surfZ_pred[~surf_mask], surfZ_noise[~surf_mask]).mean(-1).sum().item()
-                    elif self.scheduler_type == "HY_FMED":
-                        timesteps = torch.randint(step - 1, step, (bsz,), device=surfPos.device).long()
-                        t = (self.noise_scheduler.timesteps.to(timesteps)/self.noise_scheduler.num_train_timesteps)[timesteps]
-
-                        x1 = surfZ
-                        _, x0, x1 = self.transport.sample(x1)
-                        t, xt, ut = self.transport.path_sampler.plan(t, x0, x1)
-                        surfZ_pred = self.model(xt, t, surfPos, surf_mask, surf_cls, condition_emb, is_train=False)
-                        loss = mse_loss(surfZ_pred[~surf_mask], ut[~surf_mask]).mean(-1).sum().item()
                     else:
                         raise NotImplementedError
 
@@ -1074,11 +1004,11 @@ class SurfZTrainer():
                 'optimizer': self.optimizer.state_dict(),
                 "scaler": self.scaler.state_dict()
             },
-            os.path.join(ckpt_log_dir, f'surfz_e{self.epoch:04d}.pt'))
+            os.path.join(ckpt_log_dir, f'geometrygen_e{self.epoch:04d}.pt'))
         return
 
 
-class SurfZ_OneStage_Trainer(SurfZTrainer):
+class OneStage_Gen_Trainer(GeometryGenTrainer):
     """ Surface Latent Geometry Trainer. """
     def __init__(self, args, train_dataset, val_dataset):
         self.args = args
@@ -1114,6 +1044,7 @@ class SurfZ_OneStage_Trainer(SurfZTrainer):
         self.block_dims = args.block_dims
 
         # Initialize condition encoder
+        self.cond_encoder = None
         if args.text_encoder is not None:
             self.text_encoder = TextEncoder(args.text_encoder, self.device)
             self.cond_encoder = self.text_encoder
@@ -1153,25 +1084,13 @@ class SurfZ_OneStage_Trainer(SurfZTrainer):
         model_z_dim = (self.sample_size//(2**(len(args.block_dims)-1)))**2 * self.latent_channels + 8  # 8 = 3Dbbox(6)+2Dscale(2)
         if args.denoiser_type == "default":
             print("Default Transformer-Encoder denoiser.")
-            model = SurfZNet(
+            model = GeometryGenNet(
                 p_dim=model_p_dim,
                 z_dim=model_z_dim,
                 num_heads=12,
                 embed_dim=args.embed_dim,
                 condition_dim=self.condition_dim,
                 num_layer=args.num_layer,
-                num_cf=train_dataset.num_classes
-                )
-        elif args.denoiser_type == "hunyuan_dit":
-            print("Hunyuan2.0 Dit denoiser.")
-            model = SurfZNet_hunyuandit(
-                p_dim=model_p_dim,
-                z_dim=model_z_dim,
-                num_heads=12,
-                embed_dim=args.embed_dim,
-                condition_dim=self.condition_dim,
-                num_layer=args.num_layer,
-                dropout=args.dropout,
                 num_cf=train_dataset.num_classes
                 )
         else:
@@ -1186,7 +1105,7 @@ class SurfZ_OneStage_Trainer(SurfZTrainer):
             if 'model_state_dict' in state_dict: model.load_state_dict(state_dict['model_state_dict'])
             elif 'model' in state_dict: model.load_state_dict(state_dict['model'])
             else: model.load_state_dict(state_dict)
-            print('Load SurfZNet checkpoint from %s.'%(args.weight))
+            print('Load checkpoint from %s.'%(args.weight))
 
         model = nn.DataParallel(model, device_ids=self.device_ids) # distributed training
         self.model = model.to(self.device).train()
@@ -1206,23 +1125,8 @@ class SurfZ_OneStage_Trainer(SurfZTrainer):
                 beta_end=0.02,
                 clip_sample=False,
             )
-        elif args.scheduler == "HY_FMED":
-            raise NotImplementedError()
-            self.scheduler_type = 'HY_FMED'
-            from src.models.denoisers.dit_hunyuan_2.schedulers import FlowMatchEulerDiscreteScheduler
-            from src.models.denoisers.dit_hunyuan_2.transport import create_transport
-
-            # transport用于采样t、计算损失
-            self.transport = create_transport(
-                path_type='Linear',
-                prediction="velocity",
-                train_sample_type="uniform"
-            )
-
-            self.noise_scheduler = FlowMatchEulerDiscreteScheduler(
-                num_train_timesteps = 1000,
-                shift=args.scheduler_shift,
-            )
+        else:
+            raise NotImplementedError
 
         # Initialize optimizer
         self.network_params = list(self.model.parameters())
@@ -1234,11 +1138,7 @@ class SurfZ_OneStage_Trainer(SurfZTrainer):
             weight_decay=1e-6,
             eps=1e-08,
         )
-        self.scaler = torch.cuda.amp.GradScaler(
-            init_scale=2.0**14,
-            growth_factor=1.5, 
-            growth_interval=20000 * steps_per_epoch(len(self.train_dataset), args.batch_size)
-        )
+        self.scaler = torch.cuda.amp.GradScaler()
         if args.finetune:
             if "optimizer" in state_dict:
                 self.optimizer.load_state_dict(state_dict["optimizer"])
@@ -1312,7 +1212,7 @@ class SurfZ_OneStage_Trainer(SurfZTrainer):
                     condition_emb = None
                 if condition_emb is not None:
                     condition_emb = condition_emb.to(self.device)
-
+                print(condition_emb.shape)
                 bsz = len(surfPos)
 
                 self.optimizer.zero_grad() # zero gradient
@@ -1435,16 +1335,6 @@ class SurfZ_OneStage_Trainer(SurfZTrainer):
                         loss_latent = mse_loss(latent_pred[~surf_mask][:, :64], latent_noise[~surf_mask][:, :64]).mean(-1).sum().item()
                         loss_bbox = mse_loss(latent_pred[~surf_mask][:, 64:], latent_noise[~surf_mask][:, 64:]).mean(-1).sum().item()
                         bbox_l1 = l1_loss(latent_pred[~surf_mask][:, 64:], latent_noise[~surf_mask][:, 64:]).mean(-1).sum().item()
-                    elif self.scheduler_type == "HY_FMED":
-                        raise NotImplementedError()
-                        timesteps = torch.randint(step - 1, step, (bsz,), device=surfPos.device).long()
-                        t = (self.noise_scheduler.timesteps.to(timesteps)/self.noise_scheduler.num_train_timesteps)[timesteps]
-
-                        x1 = surfZ
-                        _, x0, x1 = self.transport.sample(x1)
-                        t, xt, ut = self.transport.path_sampler.plan(t, x0, x1)
-                        surfZ_pred = self.len_predictor(xt, t, None, surf_mask, surf_cls, condition_emb, is_train=False)
-                        loss = mse_loss(surfZ_pred[~surf_mask], ut[~surf_mask]).mean(-1).sum().item()
                     else:
                         raise NotImplementedError
 

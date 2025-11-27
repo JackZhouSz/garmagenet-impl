@@ -52,6 +52,7 @@ class Embedder(nn.Module):
     def forward(self, x):
         return self.embed(x)
 
+
 @dataclass
 class AutoencoderKLOutput(BaseOutput):
     """
@@ -260,78 +261,20 @@ class TextEncoder:
 
         self.device = device
 
-        if encoder == 'T5':
-            import transformers
-            self.tokenizer = transformers.T5TokenizerFast.from_pretrained(
-                "/data/lsr/models/FLUX.1-dev", subfolder='tokenizer_2')
-            text_encoder = transformers.T5EncoderModel.from_pretrained(
-                "/data/lsr/models/FLUX.1-dev", subfolder='text_encoder_2')
-            self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
-            self.text_emb_dim = 4096
-            self.text_embedder_fn = self._get_t5_text_embeds
-        elif encoder == 'CLIP':
+        if encoder == 'CLIP':
             import transformers
             self.tokenizer = transformers.CLIPTokenizer.from_pretrained(
-                "/data/lsr/models/FLUX.1-dev", subfolder='tokenizer')
+                "model-root", subfolder='tokenizer')
             text_encoder = transformers.CLIPTextModel.from_pretrained(
-                "/data/lsr/models/FLUX.1-dev", subfolder='text_encoder')
+                "model-root", subfolder='text_encoder')
             self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
             self.text_emb_dim = 768
             self.text_embedder_fn = self._get_clip_text_embeds
-        elif encoder == 'GME':
-            from llm_utils.gme_inference import GmeQwen2VL
-            self.text_embedder_fn = self._get_gme_text_embeds
-            self.gme = GmeQwen2VL(model_path='/data/lsr/models/gme-Qwen2-VL-2B-Instruct', max_length=32)
-            self.text_emb_dim = 1536
         else:
             raise ValueError(f'Unsupported encoder {encoder}.')
-        
-        # Test encoding text
+
         print(f"[DONE] Init {encoder} text encoder.")
 
-
-    def _get_gme_text_embeds(
-        self,
-        prompt: Union[str, List[str]] = None,
-        max_sequence_length: int = 310
-    ):        
-        assert hasattr(self, 'gme'), "Must initialize GME model before use."
-
-        prompt_embeds = self.gme.get_text_embeddings(texts=prompt)
-                
-        return prompt_embeds
-        
-    
-    def _get_t5_text_embeds(
-        self,
-        prompt: Union[str, List[str]] = None,
-        max_sequence_length: int = 16
-    ):
-        if not prompt or not prompt[0]: return None
-        if not hasattr(self, 'tokenizer'): return None
-        if not hasattr(self, 'text_encoder'): return None
-                
-        prompt = [prompt] if isinstance(prompt, str) else prompt
-        batch_size = len(prompt)
-
-        with torch.no_grad():
-            text_inputs = self.tokenizer(
-                prompt,
-                padding="max_length",
-                max_length=max_sequence_length,
-                truncation=True,
-                return_length=False,
-                return_overflowing_tokens=False,
-                return_tensors="pt",
-            )
-            
-            text_input_ids = text_inputs.input_ids
-            prompt_embeds = self.text_encoder(text_input_ids.to(self.device), output_hidden_states=True).last_hidden_state[0]
-            _, seq_len, _ = prompt_embeds.shape
-
-        return prompt_embeds
-    
-    
     def _get_clip_text_embeds(
         self,
         prompt: Union[str, List[str]],
@@ -469,14 +412,6 @@ class SketchEncoder:
             nearest_res = self.model.get_nearest_supported_resolution(*x.shape[-2:])
             x = F.interpolate(x, nearest_res, mode='bilinear', align_corners=False)
 
-            # from matplotlib import pyplot as plt
-            # nearest_res = self.model.get_nearest_supported_resolution(*(x.shape[-2:][::-1]))
-            # img = x[0].permute(1, 2, 0).cpu().numpy()
-            # plt.imshow(img)
-            # plt.axis("off")
-            # plt.savefig("/home/Ex1/ProjectFiles/Pycharm_MyPaperWork/style3d_gen/_LSR/SigAsia2025_Revision/clean_matadata/123.png")
-            # plt.show()
-
             # inference
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 summary, _ = self.model(x)
@@ -487,13 +422,13 @@ class SketchEncoder:
         return self.sketch_embedder_fn(sketch_fp)
 
 
-class SurfPosNet(nn.Module):
+class TypologyGenNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
     """
 
     def __init__(self, p_dim=6, embed_dim=768, condition_dim=-1, num_cf=-1):
-        super(SurfPosNet, self).__init__()
+        super(TypologyGenNet, self).__init__()
 
         self.p_dim = p_dim
         self.embed_dim = embed_dim
@@ -566,81 +501,12 @@ class SurfPosNet(nn.Module):
 
         return pred
 
-
-class SurfPosNet_hunyuandit(nn.Module):
-    # def __init__(self, p_dim=6, z_dim=3 * 4 * 4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=[3, 9], num_cf=-1):
-    def __init__(
-            self,
-            p_dim=6,
-            embed_dim=768,
-            condition_dim=-1,
-            num_cf=-1,
-            num_heads = 12,
-            num_layer = [3,9]
-        ):
-        super(SurfPosNet_hunyuandit, self).__init__()
-        self.p_dim = -1
-        self.z_dim = p_dim
-        self.embed_dim = embed_dim
-        self.condition_dim = condition_dim
-        # self.out_dim = out_dim
-        # self.use_cf = num_cf > 0
-        self.num_heads = num_heads
-        self.num_layer = num_layer
-
-        if not isinstance(self.num_layer, List):
-            raise TypeError("Type of num_layer should be list.")
-        if len(self.num_layer) != 2:
-            raise ValueError("Length of num_layer should be 2.")
-
-        self.net = HunyuanDiT(
-            in_channels=self.z_dim,
-            pos_dim=self.p_dim,
-            context_in_dim=self.condition_dim,
-            hidden_size=self.embed_dim,
-            num_heads=self.num_heads,
-            depth_double_blocks=self.num_layer[0],
-            depth_single_blocks=self.num_layer[1],
-            mlp_ratio=4.0,
-            qkv_bias=True,
-            time_factor=1000,
-            dropout=0.1,
-        )
-
-    def forward(
-            self,
-            surfPos,
-            timesteps,
-            class_label=None,
-            condition=None,
-            is_train=False
-        ):
-
-        if self.condition_dim > 0 and condition is not None:
-            if len(condition.shape) == 2:
-                condition = condition.unsqueeze(1)
-            elif len(condition.shape) == 3:
-                pass
-            else:
-                raise NotImplementedError
-
-        output = self.net(
-            x=surfPos,
-            p=None,
-            t=timesteps,
-            cond=condition,
-            attn_mask=None
-        )
-
-        return output
-
-
-class SurfZNet(nn.Module):
+class GeometryGenNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
     """
     def __init__(self, p_dim=6, z_dim=3*4*4, out_dim=-1, z_projector_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=12, num_cf=-1):
-        super(SurfZNet, self).__init__()
+        super(GeometryGenNet, self).__init__()
         self.p_dim = p_dim
         self.z_dim = z_dim
         self.z_projector_dim = z_projector_dim
@@ -751,64 +617,3 @@ class SurfZNet(nn.Module):
 
         pred = self.fc_out(output)
         return pred
-
-
-class SurfZNet_hunyuandit(nn.Module):
-    def __init__(self, p_dim=6, z_dim=3 * 4 * 4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=[3,9],dropout=0.1, num_cf=-1):
-        super(SurfZNet_hunyuandit, self).__init__()
-        self.p_dim = p_dim
-        self.z_dim = z_dim
-        self.embed_dim = embed_dim
-        self.condition_dim = condition_dim
-        self.out_dim = out_dim
-        # self.use_cf = num_cf > 0
-        self.num_heads = num_heads
-
-        if not isinstance(num_layer, List):
-            raise TypeError("Type of num_layer should be list.")
-        if len(num_layer) != 2:
-            raise ValueError("Length of num_layer should be 2.")
-        self.num_layer = num_layer
-        self.net = HunyuanDiT(
-            in_channels=self.z_dim,
-            pos_dim=self.p_dim,
-            context_in_dim=self.condition_dim,
-            hidden_size=self.embed_dim,
-            num_heads=self.num_heads,
-            depth_double_blocks=self.num_layer[0],
-            depth_single_blocks=self.num_layer[1],
-            mlp_ratio=4.0,
-            qkv_bias=True,
-            time_factor=1000,
-            dropout=dropout,
-        )
-
-    def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, condition=None, is_train=False):
-        """ forward pass """
-        # bsz = timesteps.size(0)
-
-        # time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
-        # z_embeds = self.z_embed(surfZ)
-        # p_embeds = self.p_embed(surfPos)
-        #
-        # tokens = z_embeds + p_embeds + time_embeds
-
-        if self.condition_dim > 0 and condition is not None:
-            if len(condition.shape) == 2:
-                condition = condition.unsqueeze(1)
-            elif len(condition.shape) == 3:
-                pass
-            else:
-                raise NotImplementedError
-
-        output = self.net(
-            x=surfZ,
-            p=surfPos,
-            t=timesteps,
-            cond=condition,
-            attn_mask=surf_mask
-        )
-
-        # pred = self.fc_out(output)
-        return output
-

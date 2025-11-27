@@ -12,6 +12,7 @@ def ensure_directory(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
+
 def randn_tensor(
     shape: Union[Tuple, List],
     generator: Optional[Union[List["torch.Generator"], "torch.Generator"]] = None,
@@ -81,6 +82,7 @@ def _denormalize_pts(pts, bbox):
     bbox_scale = np.max(bbox_max - bbox_min, axis=-1, keepdims=True) * 0.5
     bbox_offset = (bbox_max + bbox_min) / 2.0
     return pts * bbox_scale + bbox_offset
+
 
 def resize_image(image: Image.Image, new_size) -> Image.Image:
     # image = Image.open(file_path)
