@@ -4,21 +4,14 @@
 [![Github](https://img.shields.io/badge/github-Homepage-blue?logo=github)](https://style3d.github.io/garmagenet/)
 [![HuggingFace](https://img.shields.io/badge/huggingface-Dataset-yellow?logo=huggingface)](https://huggingface.co/datasets/Style3D/GarmageSet)
 
-行内公式：$x+y$
-
-块级公式：
-$$
-\text{Siran Li}^{1,2,*}
-$$
-
-[$\text{Siran Li}^{1,2,*}$]() 
-[$\text{Ruiyang Liu}^{4,2,*†}$](https://github.com/walnut-REE?tab=overview&from=2021-12-01&to=2021-12-31) 
-[$\text{Chen Liu}^{4,2,*}$]()
-[$\text{Zhendong Wang}^{2}$](https://wangzhendong619.github.io/)
-[$\text{Gaofeng He}^{2}$]()
-[$\text{YongLu Li}^{2}$](https://dirtyharrylyl.github.io/)
-[$\text{Xiaogang Jin}^{2}$](http://www.cad.zju.edu.cn/home/jin/)
-[$\text{Huamin Wang}^{2}$](https://wanghmin.github.io/)
+[Siran Li](),
+[Ruiyang Liu](https://github.com/walnut-REE) ,
+[Chen Liu](),
+[Zhendong Wang](https://wangzhendong619.github.io/),
+[Gaofeng He](),
+[YongLu Li](https://dirtyharrylyl.github.io/),
+[Xiaogang Jin](http://www.cad.zju.edu.cn/home/jin/),
+[Huamin Wang](https://wanghmin.github.io/)
 
 ![](resources/assests/teaser.jpg)
 > We introduce GarmageNet, a novel uniform generation framework capable of producing complex and simulation-ready garments from various input modalities, including text prompts, sketch images, raw sewing patterns, or unstructured point clouds.
