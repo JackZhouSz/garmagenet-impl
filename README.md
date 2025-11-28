@@ -23,7 +23,7 @@
 
 ### Environment (Tested)
 - Linux
-- Python 3.9
+- Python 3.10
 - CUDA 11.8 
 - PyTorch 2.2
 

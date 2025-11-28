@@ -125,9 +125,6 @@ def prepare_surf_data(
         # if panel_id not in panel_data: print(f"\t Skipping panel {panel_id}"); continue
 
         panel_ids.append(panel_id)
-        # panel_seg_id = panel_data[panel_id]['label'].strip()
-        # panel_seg_id = _PANEL_CLS.index(panel_seg_id) + 1 if panel_seg_id in _PANEL_CLS else 0.
-        # panel_cls.append(panel_seg_id)
 
         panel_faces = mesh_obj.cells[idx].data
         vert_ids = np.unique(panel_faces)
