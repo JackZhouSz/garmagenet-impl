@@ -4,7 +4,7 @@
 [![Github](https://img.shields.io/badge/github-Homepage-blue?logo=github)](https://style3d.github.io/garmagenet/)
 [![HuggingFace](https://img.shields.io/badge/huggingface-Dataset-yellow?logo=huggingface)](https://huggingface.co/datasets/Style3D/GarmageSet)
 
-[$\text{Siran Li}^{1,2,*}$]() 
+\\[$\text{Siran Li}^{1,2,*}$]()\\
 [$\text{Ruiyang Liu}^{4,2,*†}$](https://github.com/walnut-REE?tab=overview&from=2021-12-01&to=2021-12-31) 
 [$\text{Chen Liu}^{4,2,*}$]()
 [$\text{Zhendong Wang}^{2}$](https://wangzhendong619.github.io/)
