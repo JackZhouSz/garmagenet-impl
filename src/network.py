@@ -12,8 +12,6 @@ from diffusers.utils import BaseOutput
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.autoencoders.vae import Decoder, DecoderOutput, DiagonalGaussianDistribution, Encoder
 
-from src.models.denoisers.dit_hunyuan_2.hunyuan3ddit import HunyuanDiT
-
 from typing import Any, Callable, Dict, List, Optional, Union
 
 
