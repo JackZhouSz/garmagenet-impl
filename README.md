@@ -1,3 +1,24 @@
+## GarmageNet: A Multimodal Generative Framework for Sewing Pattern Design and Generic Garment Modeling
+
+[![arXiv](https://img.shields.io/badge/📃-arXiv%20-red.svg)](https://arxiv.org/abs/2504.01483)
+[![Github](https://img.shields.io/badge/github-Homepage-blue?logo=github)](https://style3d.github.io/garmagenet/)
+[![HuggingFace](https://img.shields.io/badge/huggingface-Dataset-yellow?logo=huggingface)](https://huggingface.co/datasets/Style3D/GarmageSet)
+
+[$\text{Siran Li}^{1,2,*}$]() 
+[$\text{Ruiyang Liu}^{4,2,*†}$](https://github.com/walnut-REE?tab=overview&from=2021-12-01&to=2021-12-31) 
+[$\text{Chen Liu}^{4,2,*}$]()
+[$\text{Zhendong Wang}^{2}$](https://wangzhendong619.github.io/)
+[$\text{Gaofeng He}^{2}$]()
+[$\text{YongLu Li}^{2}$](https://dirtyharrylyl.github.io/)
+[$\text{Xiaogang Jin}^{2}$](http://www.cad.zju.edu.cn/home/jin/)
+[$\text{Huamin Wang}^{2}$](https://wanghmin.github.io/)
+
+![alt BrepGen](resources/assests/teaser.jpg)
+> We introduce GarmageNet, a novel uniform generation framework capable of producing complex and simulation-ready garments from various input modalities, including text prompts, sketch images, raw sewing patterns, or unstructured point clouds.
+
+![alt BrepGen](resources/assests/overview.png)
+> The image above is an overview of GarmageNet. This project mainly focuses on the parts from **(a)** to **(b)**.
+
 ## Requirements
 
 ### Environment (Tested)
@@ -5,7 +26,6 @@
 - Python 3.9
 - CUDA 11.8 
 - PyTorch 2.2
-
 
 ### Dependencies
 
@@ -17,8 +37,6 @@ pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 pip install chamferdist
 ```
-
-
 
 ## Data Preparation
 
@@ -38,8 +56,6 @@ python data_process/prepare_data_list.py \
     --garmage_dir <garmageset-root>/garmages \
     --output_dir <garmageset-root>/datalist
 ```
-
-
 
 ## Training
 
@@ -130,8 +146,6 @@ python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature \
     --gpu 0
 ```
-
-
 
 ## Inference 
 
