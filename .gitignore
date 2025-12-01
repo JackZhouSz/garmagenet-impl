@@ -174,36 +174,3 @@ cython_debug/
 
 # VS Code
 .vscode/
-/data
-/_LSR
-/thirdparty
-/notebooks/data_analysize/gen_statistics_csv/test_data/
-/notebooks/data_analysize/gen_statistics_csv/test_data_obj/
-/notebooks/data_analysize/gen_statistics_csv/test_data_json/
-/src/experiments/export_denoising_vid_byAddnoise/pkl_files/
-/src/experiments/export_denoising_vid_byAddnoise/output/
-/src/experiments/export_denoising_vid/output/
-/src/experiments/export_denoising_vid/pkl_files/
-/src/models/denoisers/dit_diffusers/
-/src/models/denoisers/dit_holopart/
-/src/models/denoisers/dit_original/
-output/*
-/src/models/sketch_feature_extractor/vit/test_data/
-/src/models/sketch_feature_extractor/vit/test_data_garmage/
-/src/models/sketch_feature_extractor/vit/o
-
-output/
-/notebooks/data_analysize/results*
-/notebooks/data_analysize/statistics*
-/notebooks/data_analysize/*.csv
-**/output/
-/src/models/pc_backbone/point_e/examples/
-/data_process/geometry_utils/
-/data_process/stylexd_utils/
-/src/experiments/batch_inference_inpainting/
-/_style3d_work/
-/data_process/
-/notebooks/
-/thirdparty/chamferdist/*
-/src/experiments/export_denoising_vid/
-/src/experiments/export_denoising_vid_byAddnoise/
