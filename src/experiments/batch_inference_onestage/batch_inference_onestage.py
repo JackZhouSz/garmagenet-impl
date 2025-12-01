@@ -311,7 +311,11 @@ def inference_one(
     elif surf_wcs is None and surf_bbox is not None:
         surf_wcs = _denormalize_pts(surf_ncs, surf_bbox)
 
-    # get 2d bbox
+    # Get 2d bbox
+    """
+    Current version for opensource only generation 2d-bbox scale.
+    It is also valid to train model generate 2d bbox directly.
+    """
     if surf_uv_bbox is None and surf_uv_bbox_scale is not None:
         surf_uv_bbox = np.zeros((n_surfs, 4))
         surf_uv_bbox[:, :2] = surf_uv_bbox[:,:2] - surf_uv_bbox_scale/2
