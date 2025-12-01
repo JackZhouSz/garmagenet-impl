@@ -108,7 +108,7 @@ Run training.
 ```bash
 python src/ldm.py --data /data/AIGP/GarmageSet_Opensource/garmages --use_data_root \
     --list /data/AIGP/GarmageSet_Opensource/datalist/garmageset_split_9_1.pkl --option onestage_gen \
-    --surfvae log/stylexd_vae_surf_256_xyz_uv_mask_unet6_latent_1/ckpts/vae_e0800.pt \
+    --surfvae log/stylexd_vae_surf_256_xyz_mask_unet6_latent_1/ckpts/vae_e0800.pt \
     --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_pccond/encoder_mode \
     --expr Onestage_xyz_mask_pad_zero_pccond \
     --train_nepoch 300000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
@@ -149,19 +149,52 @@ python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
 
 ## Inference 
 
-Run inference to generate garmage with condition in validation set (saved in the cache).
+Run inference **unconditional**.
 
 ```bash
 python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 	--vae <vae-checkpoint-path> \
 	--onestage_gen <one-stage-model-ckpt-path> \
 	--cache <cache-path-for-inference> \
-	--sketch_encoder LAION2B
-	--output generated/
-	--padding zero
-	--block_dims 16 32 32 64 64 128
-	--img_channels 4
-	--pos_dim -1
-	--garmage_data_fields surf_ncs surf_mask
+	--output generated/uncond \
+	--padding zero \
+	--block_dims 16 32 32 64 64 128 \
+	--img_channels 4 \
+	--pos_dim -1 \
+	--garmage_data_fields surf_ncs surf_mask \
+	--latent_data_fields latent64 bbox3d scale2d
+```
+
+Run inference to generate garmage with **pointcloud condition** in validation set (saved in the cache).
+
+```bash
+python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
+	--vae <vae-checkpoint-path> \
+	--onestage_gen <one-stage-model-ckpt-path> \
+	--cache <cache-path-for-inference> \
+	--pointcloud_encoder POINT_E \
+	--output generated/pc_cond_uniform \
+	--padding zero \
+	--block_dims 16 32 32 64 64 128 \
+	--img_channels 4 \
+	--pos_dim -1 \
+	--garmage_data_fields surf_ncs surf_mask \
+	--latent_data_fields latent64 bbox3d scale2d
+```
+
+Run inference to generate garmage with **sketch condition** in validation set (saved in the cache).
+
+```bash
+python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
+	--vae <vae-checkpoint-path> \
+	--onestage_gen <one-stage-model-ckpt-path> \
+	--cache <cache-path-for-inference> \
+	--sketch_encoder LAION2B \
+	--output generated/sketch_cond \
+	--padding zero \
+	--block_dims 16 32 32 64 64 128 \
+	--img_channels 4 \
+	--pos_dim -1 \
+	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64 bbox3d scale2d
 ```
