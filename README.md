@@ -75,7 +75,7 @@ python src/vae.py --data <garmageset-root>/garmages --use_data_root \
 
 ### Train Diffusion Generation
 Based on the learned Garmage latent space, 
-we train model to map random samples from the standard normal distribution $\epsilon ∽ N (0, 1)$ to valid Garmages.
+we train model to map random samples from the standard normal distribution to the valid Garmages.
 
 #### Unconditional generation model training:
 
