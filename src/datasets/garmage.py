@@ -7,7 +7,7 @@ from glob import glob
 import torch
 import numpy as np
 
-from src.constant import _PANEL_CLS
+from src.constant import _PANEL_CLS_NUM
 
 
 class VaeData(torch.utils.data.Dataset):
@@ -132,7 +132,7 @@ class TypologyGenData(torch.utils.data.Dataset):
         if os.path.exists(self.cache_fp):
             with open(self.cache_fp, 'rb') as f: self.cache = pickle.load(f)
             self.pos_dim = self.cache['surf_pos'].shape[-1] // 2
-            self.num_classes = len(_PANEL_CLS) + 1 if 'surf_cls' in self.data_fields else 0
+            self.num_classes = _PANEL_CLS_NUM + 1 if 'surf_cls' in self.data_fields else 0
             print('Load cache from %s: '%self.cache_fp, self.cache.keys())
             print(f'POS_DIM = {self.pos_dim};\t NUM_CLASSED = {self.num_classes}.')
         else:
@@ -224,7 +224,7 @@ class TypologyGenData(torch.utils.data.Dataset):
             else np.zeros((self.max_face, 1)) - 1
 
         if not hasattr(self, 'pos_dim'): self.pos_dim = surf_pos.shape[-1] // 2
-        if not hasattr(self, 'num_classes'): self.num_classes = len(_PANEL_CLS) if 'surf_cls' in self.data_fields else 0
+        if not hasattr(self, 'num_classes'): self.num_classes = _PANEL_CLS_NUM if 'surf_cls' in self.data_fields else 0
 
         return (
             torch.FloatTensor(surf_pos),
@@ -451,7 +451,7 @@ class GeometryGenData(torch.utils.data.Dataset):
         if not hasattr(self, 'num_channels'): self.num_channels = surf_ncs.shape[-1]
         if not hasattr(self, 'resolution'): self.resolution = surf_ncs.shape[1]
         if not hasattr(self, 'pos_dim'): self.pos_dim = surf_pos.shape[-1] // 2
-        if not hasattr(self, 'num_classes'): self.num_classes = len(_PANEL_CLS) if 'surf_cls' in self.data_fields else 0
+        if not hasattr(self, 'num_classes'): self.num_classes = _PANEL_CLS_NUM if 'surf_cls' in self.data_fields else 0
 
     def __len__(self):
         return len(self.data_list)
@@ -568,7 +568,7 @@ class GeometryGenData(torch.utils.data.Dataset):
         if not hasattr(self, 'num_channels'): self.num_channels = surf_ncs.shape[-1]
         if not hasattr(self, 'resolution'): self.resolution = surf_ncs.shape[1]
         if not hasattr(self, 'pos_dim'): self.pos_dim = surf_pos.shape[-1] // 2
-        if not hasattr(self, 'num_classes'): self.num_classes = len(_PANEL_CLS) if 'surf_cls' in self.data_fields else 0
+        if not hasattr(self, 'num_classes'): self.num_classes = _PANEL_CLS_NUM if 'surf_cls' in self.data_fields else 0
 
         return (
             torch.FloatTensor(surf_pos),

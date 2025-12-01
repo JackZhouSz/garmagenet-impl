@@ -1,3 +1,5 @@
+_PANEL_CLS_NUM = 18
+
 data_fields_dict = {
     "surf_ncs": {
         "title": "Geometry Images",
