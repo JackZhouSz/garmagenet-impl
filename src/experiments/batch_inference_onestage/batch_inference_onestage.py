@@ -146,9 +146,9 @@ def init_models(args):
 
     # Load Generation Model ===
     if args.denoiser_type == 'default':
-        from src.network import GeometryGenNet
+        from src.network import GarmageNet
         print("Default Transformer-Encoder denoiser.")
-        onestage_gen_model = GeometryGenNet(
+        model = GarmageNet(
             p_dim=model_p_dim,
             z_dim=model_z_dim,
             num_heads=12,
@@ -160,15 +160,14 @@ def init_models(args):
     else:
         raise NotImplementedError
 
-    onestage_gen_model.load_state_dict(torch.load(args.onestage_gen)['model_state_dict'])
-    onestage_gen_model.to(device).eval()
-
+    model.load_state_dict(torch.load(args.onestage_gen)['model_state_dict'])
+    model.to(device).eval()
     print('[DONE] Models initialized.')
 
     return {
         'surf_vae': surf_vae,
         'ddpm_scheduler': ddpm_scheduler,
-        'onestage_gen_model': onestage_gen_model,
+        'model': model,
         'text_enc': text_enc,
         'pointcloud_enc': pointcloud_enc,
         'sketch_enc': sketch_enc,
@@ -194,7 +193,7 @@ def inference_one(
     device = args.device
 
     ddpm_scheduler = models['ddpm_scheduler']
-    onestage_gen_model = models['onestage_gen_model']
+    model = models['model']
     surf_vae = models['surf_vae']
     text_enc = models['text_enc']
 
@@ -216,14 +215,14 @@ def inference_one(
     surf_bbox, surf_uv_bbox = None, None
 
     # GeometryLatent+BBox Denoising ---------------------------------------------------------------
-    latent_len = onestage_gen_model.z_dim
+    latent_len = model.z_dim
     latent = randn_tensor((1, max_surf, latent_len), device=device)
     annention_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
     ddpm_scheduler.set_timesteps(1000//10)
     with torch.no_grad():
         for t in tqdm(ddpm_scheduler.timesteps, desc="Denoising"):
             timesteps = t.reshape(-1).to(device)
-            pred = onestage_gen_model(
+            pred = model(
                 surfZ=latent,
                 timesteps=timesteps,
                 surfPos=None,
@@ -449,6 +448,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--output', type=str, default='generated',
         help='Path to output directory')
+    
     parser.add_argument('--garmage_data_fields', nargs='+', type=str, default=[])
     parser.add_argument('--latent_data_fields', nargs='+', type=str, default=[])
     parser.add_argument('--block_dims', nargs='+', type=int, default=[16,32,32,64,64,128], help='Block dimensions of the VAE model.')

@@ -316,6 +316,7 @@ class PointcloudEncoder:
         return self.pointcloud_embedder_fn(point_cloud)
 
 
+
 class SketchEncoder:
     def __init__(self, encoder='LAION2B', device="cuda:0"):
         self.device = device
@@ -396,139 +397,94 @@ class SketchEncoder:
         return self.sketch_embedder_fn(sketch_fp)
 
 
-class TopologyGenNet(nn.Module):
+def modulate(x, shift, scale):
+    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+
+class SpatialDiTBlock(nn.Module):
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, batch_first=True)
+        
+        self.norm_cross = nn.LayerNorm(hidden_size)
+        self.cross_attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, batch_first=True)
+
+        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        mlp_hidden_dim = int(hidden_size * mlp_ratio)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, mlp_hidden_dim),
+            nn.GELU(),
+            nn.Linear(mlp_hidden_dim, hidden_size),
+        )
+
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
+        )
+
+    def forward(self, x, t, c=None, mask=None):
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
+            self.adaLN_modulation(t)[:, None].chunk(6, dim=-1)
+        )
+
+        x_norm = modulate(self.norm1(x), shift_msa, scale_msa)
+        attn_out, _ = self.attn(x_norm, x_norm, x_norm, key_padding_mask=mask)
+        x = x + gate_msa * attn_out
+
+        # Cross-attention with local-aware condition c
+        if c is not None:
+            x_norm_cross = self.norm_cross(x)
+            cross_out, _ = self.cross_attn(query=x_norm_cross, key=c, value=c, key_padding_mask=mask)
+            x = x + cross_out
+
+        # Modulate with global conditions (stored in t)
+        x_norm = modulate(self.norm2(x), shift_mlp, scale_mlp)
+        mlp_out = self.mlp(x_norm)
+        x = x + gate_mlp * mlp_out
+
+        return x
+
+
+class GarmageNet(nn.Module):
     """
     Transformer-based latent diffusion model for surface position
     """
-
-    def __init__(self, p_dim=6, embed_dim=768, condition_dim=-1, num_cf=-1):
-        super(TopologyGenNet, self).__init__()
-
-        self.p_dim = p_dim
-        self.embed_dim = embed_dim
-        self.condition_dim = condition_dim
-        self.use_cf = num_cf > 0
-
-        layer = nn.TransformerEncoderLayer(
-            d_model=self.embed_dim,
-            nhead=12,
-            norm_first=True,
-            dim_feedforward=1024,
-            dropout=0.1
-        )
+    def __init__(self, p_dim=8, z_dim=3*4*4, out_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=12, num_cf=-1):
+        super(GarmageNet, self).__init__()
         
-        self.net = nn.TransformerEncoder(layer, 12, nn.LayerNorm(self.embed_dim))
-
-        self.p_embed = nn.Sequential(
-            nn.Linear(self.p_dim, self.embed_dim),
-            nn.LayerNorm(self.embed_dim),
-            nn.SiLU(),
-            nn.Linear(self.embed_dim, self.embed_dim),
-        ) 
-
-        self.time_embed = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LayerNorm(self.embed_dim),
-            nn.SiLU(),
-            nn.Linear(self.embed_dim, self.embed_dim),
-        )
-        
-        if self.use_cf:
-            self.class_embed = Embedder(num_cf, self.embed_dim)
-
-        if self.condition_dim > 0:
-            self.cond_embed = nn.Linear(self.condition_dim, self.embed_dim, bias=False)
-        
-        self.fc_out = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim),
-            nn.LayerNorm(self.embed_dim),
-            nn.SiLU(),
-            nn.Linear(self.embed_dim, self.p_dim),
-        )
-
-    def forward(self, surfPos, timesteps, class_label:torch.tensor=None, condition=None, is_train=False):
-        """ forward pass """
-        bsz, seq_len, _ = surfPos.shape
-        bsz = timesteps.size(0)
-
-        time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)  
-        p_embeds = self.p_embed(surfPos)   
-        
-        tokens = p_embeds + time_embeds
-                    
-        if self.use_cf and class_label is not None:  # classifier-free
-            c_embeds = self.class_embed(class_label)
-            c_embeds = c_embeds.unsqueeze(1)
-            c_embeds = c_embeds.repeat((1, seq_len, 1))
-            tokens += c_embeds
-
-        if self.condition_dim > 0 and condition is not None:
-            cond_token = self.cond_embed(condition)
-            if len(cond_token.shape) == 2: tokens = tokens + cond_token[:, None]
-            else: tokens = torch.cat([tokens, cond_token], dim=1)
-
-        output = self.net(src=tokens.permute(1,0,2))  # 输入输出都是：(seq_len, batch_size, d_model)
-        output = output[:seq_len].transpose(0,1)
-        pred = self.fc_out(output)
-
-        return pred
-
-
-class GeometryGenNet(nn.Module):
-    """
-    Transformer-based latent diffusion model for surface position
-    """
-    def __init__(self, p_dim=6, z_dim=3*4*4, out_dim=-1, z_projector_dim=-1, embed_dim=768, num_heads=12, condition_dim=-1, num_layer=12, num_cf=-1):
-        super(GeometryGenNet, self).__init__()
         self.p_dim = p_dim
         self.z_dim = z_dim
-        self.z_projector_dim = z_projector_dim
+
         self.embed_dim = embed_dim
         self.condition_dim = condition_dim
-        self.out_dim = out_dim
-        self.use_cf = num_cf > 0
-        self.n_heads = num_heads
-        if isinstance(num_layer, List):
-            if len(num_layer) != 1:
-                raise ValueError("Length of num_layer should be 1.")
-            num_layer = num_layer[0]
-        self.num_layer = num_layer
+        
+        self.out_dim = out_dim if out_dim > 0 else z_dim + p_dim
+        
+        self.n_classes = num_cf
+        self.n_heads = num_heads        
+        self.n_layer = num_layer[0] if isinstance(num_layer, List) else num_layer
+        
+        self.__init_embeddings()
+        self.__init_net()        
 
+    def __init_embeddings(self):
+        
+        self.z_embed = nn.Sequential(
+            nn.Linear(self.z_dim, self.embed_dim),
+            nn.LayerNorm(self.embed_dim),
+            nn.SiLU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
+        )
+        nn.init.kaiming_normal_(self.z_embed[0].weight, mode="fan_in")
 
-        layer = nn.TransformerEncoderLayer(
-            d_model=self.embed_dim, 
-            nhead=self.n_heads,
-            norm_first=True,
-            dim_feedforward=1024, 
-            dropout=0.1
-            )
-
-        self.net = nn.TransformerEncoder(
-            layer, self.num_layer, nn.LayerNorm(self.embed_dim))
-
-        if z_projector_dim<0:
-            self.z_embed = nn.Sequential(
-                nn.Linear(self.z_dim, self.embed_dim),
-                nn.LayerNorm(self.embed_dim),
-                nn.SiLU(),
-                nn.Linear(self.embed_dim, self.embed_dim),
-            )
-        else:
-            self.z_embed = nn.Sequential(
-                nn.Linear(self.z_dim, self.z_projector_dim),
-                # nn.SiLU(),
-                nn.Linear(self.z_projector_dim, self.embed_dim),
-                nn.LayerNorm(self.embed_dim),
-                nn.SiLU(),
-                nn.Linear(self.embed_dim, self.embed_dim),
-            )
-        if self.p_dim > 0:
+        if self.p_dim > 0:   
             self.p_embed = nn.Sequential(
                 nn.Linear(self.p_dim, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
                 nn.SiLU(),
                 nn.Linear(self.embed_dim, self.embed_dim),
             )
+            nn.init.kaiming_normal_(self.p_embed[0].weight, mode="fan_in")
 
         self.time_embed = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
@@ -537,51 +493,67 @@ class GeometryGenNet(nn.Module):
             nn.Linear(self.embed_dim, self.embed_dim),
         )
 
-        if self.use_cf: self.class_embed = Embedder(num_cf, self.embed_dim)
+        if self.n_classes > 0: self.class_embed = Embedder(self.n_classes, self.embed_dim)
+        
         if self.condition_dim > 0: 
             self.cond_embed = nn.Sequential(
                 nn.Linear(self.condition_dim, self.embed_dim),
                 nn.LayerNorm(self.embed_dim),
                 nn.SiLU(),
                 nn.Linear(self.embed_dim, self.embed_dim),
-            )
+            )         
 
+    def __init_net(self):
+        self.net = nn.ModuleList([
+            SpatialDiTBlock(self.embed_dim, self.n_heads) for _ in range(self.n_layer)
+        ])
+        
+        for block in self.net:
+            nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
+            nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+        
+        self.final_norm = nn.LayerNorm(self.embed_dim, elementwise_affine=False, eps=1e-6)
+        
         self.fc_out = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim),
             nn.LayerNorm(self.embed_dim),
             nn.SiLU(),
-            nn.Linear(self.embed_dim, self.z_dim) if self.out_dim<0 else nn.Linear(self.embed_dim, self.out_dim) ,
+            nn.Linear(self.embed_dim, self.out_dim)
         )
+  
+    def forward(
+            self, pos, z, timesteps, mask, class_label=None, 
+            cond_global=None,       # global features like text prompt
+            cond_local=None,        # local-aware features like pointcloud/sketch
+            is_train=False):
 
-       
-    def forward(self, surfZ, timesteps, surfPos, surf_mask, class_label, condition=None, is_train=False):
-        """ forward pass """
+        bsz, seq_len, _ = pos.shape
 
-        bsz = timesteps.size(0)
+        x = self.z_embed(z) # [B, N, D]
+        if self.p_dim > 0: x = x + self.p_embed(pos)    # Add position signal (3D bounding box and 2D scale)
 
-        time_embeds = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
-        z_embeds = self.z_embed(surfZ)
+        t_embs = self.time_embed(sincos_embedding(timesteps, self.embed_dim)).unsqueeze(1)
+
+        # Add class embedding to time embeddings
+        if self.use_cf and class_label is not None:
+            if is_train: class_label[torch.rand(bsz, seq_len, 1) <= 0.1] = 0    # 10% random drop
+            t_embs = t_embs + self.class_embed(class_label)
+
+        # Processing global features (e.g. text prompt)
+        if self.condition_dim > 0 and cond_global is not None:
+            cond_token = self.cond_embed(cond_global)
+            cond_token = cond_token[:, None] if len(cond_token.shape) == 2 else cond_token
+            t_embs = t_embs + cond_token
+            cond_token = None
         
-        if self.p_dim > 0:
-            p_embeds = self.p_embed(surfPos)
-            tokens = z_embeds + p_embeds + time_embeds
-        else:
-            tokens = z_embeds + time_embeds
-
-        if self.condition_dim > 0 and condition is not None:
-            cond_token = self.cond_embed(condition)
-            if len(cond_token.shape) == 2:
-                tokens = tokens + cond_token[:, None]
-            elif len(cond_token.shape) == 3:
-                tokens = tokens + cond_token  # [B, n_surfs, emb_dim]
-            else:
-                raise NotImplementedError
+        # Processing local-aware features (e.g. pointcloud/sketch)
+        if self.condition_dim > 0 and cond_local is not None:
+            cond_token = self.cond_embed(cond_local)
+            cond_token = cond_token[:, None] if len(cond_token.shape) == 2 else cond_token  # [B, n_surfs, emb_dim]
+        
+        for block in self.blocks: x = block(x, t_embs, c=cond_token, mask=mask)
             
-        output = self.net(
-            src=tokens.permute(1,0,2),
-            src_key_padding_mask=surf_mask,
-        ).transpose(0,1)
+        x = self.final_norm(x)
+        pred = self.fc_out(x)
 
-        pred = self.fc_out(output)
-        
         return pred
