@@ -316,7 +316,6 @@ class PointcloudEncoder:
         return self.pointcloud_embedder_fn(point_cloud)
 
 
-
 class SketchEncoder:
     def __init__(self, encoder='LAION2B', device="cuda:0"):
         self.device = device
@@ -391,7 +390,7 @@ class SketchEncoder:
 
             # inference
             with torch.autocast('cuda', dtype=torch.bfloat16):
-                summary, spatial_feat = self.model(x)       # spatial feature in shape [N, L, C]
+                summary, spatial_feat = self.model(x)       # spatial feature in shape [N, L, C], here N equals to 1
             return spatial_feat
 
     def __call__(self, sketch_fp):
