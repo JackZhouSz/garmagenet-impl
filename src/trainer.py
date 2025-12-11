@@ -1,15 +1,20 @@
 import os
+import math
 from tqdm import tqdm
 
 import torch
 import torch.nn as nn
 
 import wandb
+import numpy as np
 from torchvision.utils import make_grid
 from diffusers import AutoencoderKL, DDPMScheduler
 
 from src.network import TextEncoder, SketchEncoder, PointcloudEncoder, GarmageNet, AutoencoderKLFastEncode
 from src.utils import get_wandb_logging_meta
+
+def steps_per_epoch(L, B):
+    return math.ceil(L / B)
 
 class VAETrainer():
     def __init__(self, args, train_dataset, val_dataset):
@@ -71,7 +76,11 @@ class VAETrainer():
         else:
             raise NotImplementedError
 
-        self.scaler = torch.cuda.amp.GradScaler()
+        self.scaler = torch.cuda.amp.GradScaler(
+            init_scale=2.0**16,
+            growth_factor=1.5,
+            growth_interval=100 * steps_per_epoch(len(self.train_dataset), args.batch_size)
+        )
 
         # Initialize wandb
         run_id, run_step = get_wandb_logging_meta(os.path.join(args.log_dir, 'wandb'))
@@ -135,6 +144,7 @@ class VAETrainer():
                 # Update model
                 with torch.autograd.set_detect_anomaly(True):
                     self.scaler.scale(total_loss).backward()
+
                 nn.utils.clip_grad_norm_(self.network_params, max_norm=5.0)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
@@ -168,8 +178,6 @@ class VAETrainer():
         self.train_dataloader = torch.utils.data.DataLoader(
             self.train_dataset, shuffle=True, batch_size=self.batch_size, num_workers=8)
 
-        if self.epoch % 100 == 0:
-            torch.cuda.empty_cache()
         self.epoch += 1
 
     def test_val(self):
@@ -254,6 +262,8 @@ def get_condition_dim(args, self):
             condition_dim = 1536
         elif args.sketch_encoder == "RADIO_V2.5-H":
             condition_dim = 3840
+        elif args.sketch_encoder == "RADIO_V2.5-H_saptial":
+            condition_dim = 1280
         else:
             raise NotImplementedError("args.sketch_encoder name wrong.")
     else:
@@ -390,7 +400,11 @@ class GarmageNetTrainer():
             weight_decay=1e-6,
             eps=1e-08,
         )
-        self.scaler = torch.cuda.amp.GradScaler()
+        self.scaler = torch.cuda.amp.GradScaler(
+            init_scale=2.0 ** 14,
+            growth_factor=1.5,
+            growth_interval=20000 * steps_per_epoch(len(self.train_dataset), args.batch_size)
+        )
         if args.finetune:
             if "optimizer" in state_dict:
                 self.optimizer.load_state_dict(state_dict["optimizer"])
@@ -427,7 +441,6 @@ class GarmageNetTrainer():
             print("Resume epoch from args.weight.\n"
                   f"Current epoch is: {self.epoch}")
             # print("This may cause error if batch size has changed.")
-
 
     def train_one_epoch(self):
         """

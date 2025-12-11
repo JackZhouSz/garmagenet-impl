@@ -212,7 +212,8 @@ class TopologyGenData(torch.utils.data.Dataset):
                     FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist. This may because no corresponding image.")
                 else:
                     sketch_feature_fp = sketch_feature_fp[0]
-                sketch_feature = np.load(sketch_feature_fp)
+                with open(sketch_feature_fp, "rb") as f:
+                    sketch_feature = pickle.load(f)["spatial"]
             else:
                 sketch_feature = data['sketch_feature']
 
@@ -554,7 +555,8 @@ class GeometryGenData(torch.utils.data.Dataset):
                     FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist. This may because no corresponding image.")
                 else:
                     sketch_feature_fp = sketch_feature_fp[0]
-                sketch_feature = np.load(sketch_feature_fp)
+                with open(sketch_feature_fp, "rb") as f:
+                    sketch_feature = pickle.load(f)["spatial"]
             else:
                 sketch_feature = data['sketch_feature']
 

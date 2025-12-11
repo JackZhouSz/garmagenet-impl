@@ -68,7 +68,7 @@ class get_model(nn.Module):
         self.drop2 = nn.Dropout(0.4)
         self.fc3 = nn.Linear(256 * width_mult, num_class)
 
-    def forward(self, xyz, features=False):
+    def forward(self, xyz, features=False, return_dict=False):
         B, _, _ = xyz.shape
         if self.normal_channel:
             norm = xyz[:, 3:, :]
@@ -84,6 +84,18 @@ class get_model(nn.Module):
         x = self.drop2(F.relu(result_features))
         x = self.fc3(x)
         x = F.log_softmax(x, -1)
+
+        if return_dict:
+            return {
+                "l1_xyz": l1_xyz,
+                "l1_points": l1_points,
+                "l2_xyz": l2_xyz,
+                "l2_points": l2_points,
+                "l3_xyz": l3_xyz,
+                "l3_points": l3_points,
+                "x": x,
+                "result_features": result_features,
+            }
 
         if features:
             return x, l3_points, result_features

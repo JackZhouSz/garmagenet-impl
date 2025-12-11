@@ -237,9 +237,9 @@ class TextEncoder:
         if encoder == 'CLIP':
             import transformers
             self.tokenizer = transformers.CLIPTokenizer.from_pretrained(
-                "model-root", subfolder='tokenizer')
+                "/data/lsr/models/FLUX.1-dev", subfolder='tokenizer')
             text_encoder = transformers.CLIPTextModel.from_pretrained(
-                "model-root", subfolder='text_encoder')
+                "/data/lsr/models/FLUX.1-dev", subfolder='text_encoder')
             self.text_encoder = nn.DataParallel(text_encoder).to(device).eval()
             self.text_emb_dim = 768
             self.text_embedder_fn = self._get_clip_text_embeds
@@ -297,7 +297,7 @@ class PointcloudEncoder:
         if encoder == 'POINT_E':
             from src.models.pc_backbone.point_e.evals.feature_extractor import PointNetClassifier
             self.pointcloud_emb_dim = 512
-            self.pointcloud_encoder = PointNetClassifier(devices=[self.device], cache_dir='<path-to-PFID_evaluator>/PFID_evaluator', device_batch_size=1)
+            self.pointcloud_encoder = PointNetClassifier(devices=[self.device], cache_dir='/data/lsr/models/PFID_evaluator', device_batch_size=1)
             self.pointcloud_embedder_fn = self._get_pointe_pointcloud_embeds
         else:
             raise NotImplementedError
@@ -328,8 +328,7 @@ class SketchEncoder:
             self.img_process = _transform(image_resolution)
             self.sketch_emb_dim = 1280
             VIT_MODEL = 'vit_huge_patch14_224_clip_laion2b'
-            # https://huggingface.co/timm/vit_huge_patch14_clip_224.laion2b_ft_in12k_in1k/tree/main
-            safetensors_path = '<path-to-the-model.safetensors>'
+            safetensors_path = '/data/lsr/models/models--timm--vit_huge_patch14_clip_224.laion2b/snapshots/b8441fa3f968a5e469c166176ee82f8ce8dbc4eb/model.safetensors'
             vit_model = timm.create_model(VIT_MODEL, pretrained=False).to(self.device)
             vit_model.eval()
             with safe_open(safetensors_path, framework="pt") as f:
@@ -360,7 +359,6 @@ class SketchEncoder:
             raise NotImplementedError
         print(f"[DONE] Init {encoder} sketch encoder.")
 
-
     def _get_laion2b_sketch_embeds(self, sketch_fp):
         image = Image.open(sketch_fp).convert('RGB')
         image = self.img_process(image)
@@ -368,7 +366,6 @@ class SketchEncoder:
         sketch_features = self.sketch_encoder.forward_features(image).squeeze()
         sketch_features = sketch_features[1:]
         return sketch_features
-
 
     def _get_radiov2_5h_sketch_embeds(self, sketch_fp, resize=True):
         with torch.no_grad():
@@ -430,7 +427,7 @@ class SpatialDiTBlock(nn.Module):
         )
         
     def modulate(self, x, shift, scale):
-        return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+        return x * (1 + scale) + shift
 
     def forward(self, x, t, context=None, mask=None):
         """
@@ -462,6 +459,8 @@ class SpatialDiTBlock(nn.Module):
         # We usually apply standard Norm before Cross-Attn
         if context is not None:
             x_norm_cross = self.norm_cross(x)
+            if context.ndim == 2:
+                context=context.unsqueeze(1)
             cross_out, _ = self.cross_attn(query=x_norm_cross, key=context, value=context)
             x = x + cross_out 
 
@@ -567,18 +566,18 @@ class GarmageNet(nn.Module):
 
         # Add class embedding to time embeddings
         if self.n_classes > 0 and class_label is not None:
-            if is_train: class_label[torch.rand(bsz, seq_len, 1) <= 0.1] = 0    # 10% random drop
-            t_embs = t_embs + self.class_embed(class_label)
+            if is_train: class_label[torch.rand(class_label.shape) <= 0.1] = 0 # 10% random drop
+            assert class_label.ndim==2
+            t_embs = t_embs + self.class_embed(class_label).squeeze(-2)
             print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
 
         # Processing global features (e.g. text prompt)
         if self.condition_dim > 0 and cond_global is not None:
             cond_token = self.cond_embed(cond_global)
-            t_embs = t_embs + cond_token
-            cond_token = None
+            # t_embs = t_embs + cond_token
+            # cond_token = None
             print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
 
-        
         # Processing local-aware features (e.g. pointcloud/sketch)
         if self.condition_dim > 0 and cond_local is not None:
             cond_token = self.cond_embed(cond_local)

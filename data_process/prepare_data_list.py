@@ -16,6 +16,8 @@ if __name__ == "__main__":
     garment_list = sorted(glob(os.path.join(args.garmage_dir, "*.pkl")))
     garment_list = [os.path.basename(fp) for fp in garment_list]
 
+    args.output_name = args.output_name + f"_{len(garment_list)}"
+
     split = [9., 1.]
     data_list = {"train": [], "val": []}
     split[0] = int(len(garment_list) * split[0]/sum(split))

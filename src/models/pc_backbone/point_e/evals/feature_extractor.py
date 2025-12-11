@@ -125,6 +125,19 @@ class PointNetClassifier(FeatureExtractor):
         features = features.cpu().numpy()
         return features
 
+    def get_features_all(self, point_clouds):
+        if point_clouds.ndim == 2:
+            point_clouds = point_clouds[np.newaxis, ...]
+        point_clouds = normalize_point_clouds(point_clouds)
+
+        with torch.no_grad():
+            data_dict = self.models[0](torch.tensor(point_clouds, dtype=torch.float32, device="cuda").permute(0, 2, 1), return_dict=True)
+
+        for k in data_dict:
+            data_dict[k] = data_dict[k].cpu().numpy()
+
+        return data_dict
+
 
 def normalize_point_clouds(pc: np.ndarray) -> np.ndarray:
     centroids = np.mean(pc, axis=1, keepdims=True)

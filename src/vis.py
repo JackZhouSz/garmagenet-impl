@@ -223,3 +223,82 @@ def draw_bbox_geometry(
 
     if output_fp is not None and fig_show is not None:
         fig.show(fig_show)
+
+
+def pointcloud_visualize(vertices:np.array):
+    # 场景
+    fig = go.Figure()
+
+    all_coords = np.concatenate(vertices, axis=0)
+
+    min_val = np.min(all_coords)
+    max_val = np.max(all_coords)
+
+    # x, y, z坐标
+    x = vertices[:, 0]
+    y = vertices[:, 1]
+    z = vertices[:, 2]
+
+    # 在场景中添加点云
+    fig.add_trace(go.Scatter3d(
+        x=x,
+        y=y,
+        z=z,
+        mode='markers',
+        marker=dict(
+            size=3,
+            opacity=1
+        )
+    ))
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(
+                title='X Axis',
+                range=[min_val, max_val]
+            ),
+            yaxis=dict(
+                title='Y Axis',
+                range=[min_val, max_val]
+            ),
+            zaxis=dict(
+                title='Z Axis',
+                range=[min_val, max_val]
+            ),
+            aspectmode='cube'  # 确保各个轴的比例相同
+        ),
+    )
+
+    fig.show("browser")
+
+
+def get_visualization_steps():
+    """
+    get which step should be visualize during training
+
+    Args:
+        total_steps:
+
+    Returns:
+
+    """
+    total_steps = 1000
+    steps = [999]
+
+    for i in range(total_steps - 1, -1, -1):
+        if i >= 200:
+            if i % 40 == 0:
+                if i not in steps:
+                    steps.append(i)
+        elif i >= 100:
+            if i % 10 == 0:
+                steps.append(i)
+        elif i >= 50:
+            if i % 2 == 0:
+                steps.append(i)
+        elif i >= 20:
+            if i % 1 == 0:
+                steps.append(i)
+        else:
+            steps.append(i)
+
+    return steps
