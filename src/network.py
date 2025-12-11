@@ -391,9 +391,8 @@ class SketchEncoder:
 
             # inference
             with torch.autocast('cuda', dtype=torch.bfloat16):
-                summary, _ = self.model(x)
-            sketch_features = summary[1:]
-            return sketch_features
+                summary, spatial_feat = self.model(x)       # spatial feature in shape [N, L, C]
+            return spatial_feat
 
     def __call__(self, sketch_fp):
         return self.sketch_embedder_fn(sketch_fp)
