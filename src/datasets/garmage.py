@@ -114,6 +114,8 @@ class TopologyGenData(torch.utils.data.Dataset):
         self.data_fields = args.data_fields
         self.padding = args.padding
 
+        self.condition_type = args.condition_type
+        print(f"Condition Type: {self.condition_type}.")
         if "pointcloud_feature" in self.data_fields:
             print("Use Pointcloud feature.")
             # self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, "cuda")
@@ -207,13 +209,13 @@ class TopologyGenData(torch.utils.data.Dataset):
         # Load sketch feature
         if "sketch_feature" in self.data_fields:
             if 'sketch_feature' not in data or data['sketch_feature'] is None:
-                sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
+                sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.pkl")))
                 if len(sketch_feature_fp) == 0:
                     FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist. This may because no corresponding image.")
                 else:
                     sketch_feature_fp = sketch_feature_fp[0]
                 with open(sketch_feature_fp, "rb") as f:
-                    sketch_feature = pickle.load(f)["spatial"]
+                    sketch_feature = pickle.load(f)[self.condition_type]
             else:
                 sketch_feature = data['sketch_feature']
 
@@ -397,6 +399,8 @@ class GeometryGenData(torch.utils.data.Dataset):
         self.data_fields = args.data_fields
         self.padding = args.padding
 
+        self.condition_type = args.condition_type
+        print(f"Condition Type: {self.condition_type}.")
         if "pointcloud_feature" in self.data_fields:
             print("Use Pointcloud feature.")
             # self.pointcloud_encoder = PointcloudEncoder(args.pointcloud_encoder, "cuda")
@@ -550,13 +554,13 @@ class GeometryGenData(torch.utils.data.Dataset):
         # Load sketch feature
         if "sketch_feature" in self.data_fields:
             if 'sketch_feature' not in data or data['sketch_feature'] is None:
-                sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.npy")))
+                sketch_feature_fp = sorted(glob(os.path.join(os.path.join(self.sketch_feature_dir, data_fp), "*.pkl")))
                 if len(sketch_feature_fp) == 0:
                     FileExistsError(f"pointcloud_sample_fp: {pointcloud_sample_fp} not exist. This may because no corresponding image.")
                 else:
                     sketch_feature_fp = sketch_feature_fp[0]
                 with open(sketch_feature_fp, "rb") as f:
-                    sketch_feature = pickle.load(f)["spatial"]
+                    sketch_feature = pickle.load(f)[self.condition_type]
             else:
                 sketch_feature = data['sketch_feature']
 

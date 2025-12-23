@@ -391,7 +391,7 @@ class GarmageNetTrainer():
             raise NotImplementedError
 
         # Initialize optimizer
-        self.network_params = list(self.model.parameters())
+        self.network_params =  list(self.model.parameters())
 
         self.optimizer = torch.optim.AdamW(
             self.network_params,
@@ -417,7 +417,7 @@ class GarmageNetTrainer():
         self.iters = run_step
 
         # # Initilizer dataloader
-        num_worker = 16
+        num_worker = 4
         self.train_dataloader = torch.utils.data.DataLoader(
             self.train_dataset,
             shuffle=True,
@@ -454,7 +454,7 @@ class GarmageNetTrainer():
         # Train
         for data in self.train_dataloader:
             with torch.cuda.amp.autocast():
-                pos, z, mask, cls, caption, pc_feature, sketch_feature  = data
+                pos, z, mask, cls, caption, pointcloud_feature, sketch_feature  = data
                 pos, z, mask, cls = \
                     pos.to(self.device), z.to(self.device), \
                     mask.to(self.device), cls.to(self.device)
@@ -470,9 +470,15 @@ class GarmageNetTrainer():
 
                 # NOTE: pointcloud and sketch features are pre-computed and loaded in dataset.
                 cond_global, cond_local = None, None
-                if hasattr(self, 'text_encoder'): cond_global = self.text_encoder(caption).to(self.device)
-                elif hasattr(self, 'pointcloud_encoder'): cond_local = pc_feature.to(self.device)
-                elif hasattr(self, 'sketch_encoder'): cond_local = sketch_feature.to(self.device)
+                if hasattr(self, 'text_encoder'):
+                    cond_global = self.text_encoder(caption).to(self.device)
+                elif hasattr(self, 'pointcloud_encoder'):
+                    cond_local = pointcloud_feature.to(self.device)
+                elif hasattr(self, 'sketch_encoder'):
+                    cond = sketch_feature.to(self.device)
+                    if cond.ndim == 3: cond_local = cond
+                    elif cond.ndim == 2: cond_global = cond
+                    else: raise NotImplementedError
                 
                 bsz = len(pos)
 
@@ -507,7 +513,7 @@ class GarmageNetTrainer():
                         )
                     loss_pos_noise = self.loss_fn(
                         pred_noise[~mask][:, z.shape[-1]:], 
-                        pos_noise[~mask][:, z.shape[-1]:]
+                        pos_noise[~mask][:,]
                     )
 
                     # Increase pos loss weight with magic number 7.0
@@ -561,6 +567,7 @@ class GarmageNetTrainer():
         mse_loss = nn.MSELoss(reduction='none')
         l1_loss = nn.L1Loss(reduction='none')
 
+        # Calculating metrics on denoising steps ===
         progress_bar = tqdm(total=len(self.val_dataloader))
         progress_bar.set_description(f"Testing")
 
@@ -570,28 +577,35 @@ class GarmageNetTrainer():
         bbox_L1 = [0]*len(val_timesteps)
 
         for batch_idx, data in enumerate(self.val_dataloader):
-            surfPos, surfZ, surf_mask, surf_cls, caption, pointcloud_feature, sketch_feature  = data
-            surfPos, surfZ, surf_mask, surf_cls = \
-                surfPos.to(self.device), surfZ.to(self.device), \
-                surf_mask.to(self.device), surf_cls.to(self.device)
-            surfZ = surfZ * self.z_scaled
+            pos, z, mask, cls, caption, pointcloud_feature, sketch_feature  = data
+            pos, z, mask, cls = \
+                pos.to(self.device), z.to(self.device), \
+                mask.to(self.device), cls.to(self.device)
 
-            bbox_3d_gt = surfPos[..., :6]
-            scale_2d_gt = surfPos[..., 8:10] - surfPos[..., 6:8]
-            latent_gt = torch.concatenate([surfZ, bbox_3d_gt, scale_2d_gt], dim=-1)
+            z = z * self.z_scaled
+            pos = torch.concatenate([
+                (pos[..., 3:6] + pos[..., 0:3]) * 0.5,  # 3D bbox center
+                (pos[..., 3:6] - pos[..., 0:3]),        # 3D bbox size
+                (pos[..., 8:10] - pos[..., 6:8]),       # 2D bbox size
+            ], dim=-1)
 
-            surf_mask[...] = False
+            mask[...] = False
 
             # NOTE: pointcloud and sketch features are pre-computed and loaded in dataset.
             cond_global, cond_local = None, None
+            if hasattr(self, 'text_encoder'):
+                cond_global = self.text_encoder(caption).to(self.device)
+            elif hasattr(self, 'pointcloud_encoder'):
+                cond_local = pointcloud_feature.to(self.device)
+            elif hasattr(self, 'sketch_encoder'):
+                cond = sketch_feature.to(self.device)
+                if cond.ndim == 3: cond_local = cond
+                elif cond.ndim == 2: cond_global = cond
+                else: raise NotImplementedError
 
-            if hasattr(self, 'text_encoder'): cond_global = self.text_encoder(caption)
-            elif hasattr(self, 'pointcloud_encoder'): cond_local = pointcloud_feature
-            elif hasattr(self, 'sketch_encoder'): cond_local = sketch_feature
+            bsz = len(pos)
 
-            bsz = len(surfPos)
-
-            total_count += len(surfPos)
+            total_count += len(pos)
 
             with torch.no_grad():
                 for idx, step in enumerate(val_timesteps):
@@ -601,45 +615,62 @@ class GarmageNetTrainer():
                         # timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,), device=self.device).long()  # [batch,]
                         timesteps = torch.randint(step - 1, step, (bsz,), device=self.device).long()
 
-                        latent_noise = torch.randn(latent_gt.shape).to(self.device)
-                        latent_diffused = self.noise_scheduler.add_noise(latent_gt, latent_noise, timesteps)
+                        z_noise = torch.randn(z.shape).to(self.device)
+                        z_noised = self.noise_scheduler.add_noise(z, z_noise, timesteps)
+
+                        pos_noise = torch.randn(pos.shape).to(self.device)
+                        pos_noised = self.noise_scheduler.add_noise(pos, pos_noise, timesteps)
 
                         # Predict noise
-                        latent_pred = self.model(
-                            latent_diffused, 
-                            timesteps, 
-                            None, 
-                            surf_mask, 
-                            surf_cls, 
-                            cond_global, 
-                            cond_local, 
-                            is_train=True
+                        pred_noise = self.model(
+                            pos = pos_noised,
+                            z = z_noised,
+                            timesteps = timesteps,
+                            mask = mask,
+                            class_label = cls,
+                            cond_global = cond_global,
+                            cond_local = cond_local,
+                            is_train = True
                             )
 
                         # Loss
                         # If without pos embed, token generated position is random.
-                        loss_latent = mse_loss(latent_pred[~surf_mask][:, :64], latent_noise[~surf_mask][:, :64]).mean(-1).sum().item()
-                        loss_bbox = mse_loss(latent_pred[~surf_mask][:, 64:], latent_noise[~surf_mask][:, 64:]).mean(-1).sum().item()
-                        bbox_l1 = l1_loss(latent_pred[~surf_mask][:, 64:], latent_noise[~surf_mask][:, 64:]).mean(-1).sum().item()
+                        loss_z_noise = mse_loss(
+                            pred_noise[~mask][:, :z.shape[-1]],
+                            z_noise[~mask][:, :z.shape[-1]]
+                        ).mean(-1).sum().item()
+                        loss_pos_noise = mse_loss(
+                            pred_noise[~mask][:, z.shape[-1]:],
+                            pos_noise[~mask][:,]
+                        ).mean(-1).sum().item()
+                        bbox_l1 = l1_loss(
+                            pred_noise[~mask][:, z.shape[-1]:],
+                            pos_noise[~mask][:,]
+                        ).mean(-1).sum().item()
                     
                     else:
                         raise NotImplementedError
 
                     # total_loss[idx] += loss
-                    latent_loss[idx] += loss_latent
-                    bbox_loss[idx] += loss_bbox
+                    latent_loss[idx] += loss_z_noise
+                    bbox_loss[idx] += loss_pos_noise
                     bbox_L1[idx] += bbox_l1
 
             progress_bar.update(1)
         progress_bar.close()
 
         # logging
-        mse_latent = [loss / total_count for loss in latent_loss]
-        wandb.log(dict([(f"val-latent-{step:04d}", mse_latent[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
-        bbox_loss = [loss / total_count for loss in bbox_loss]
-        wandb.log(dict([(f"val-bbox-{step:04d}", bbox_loss[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
-        bbox_L1 = [loss / total_count for loss in bbox_L1]
-        wandb.log(dict([(f"val-bbox-L1-{step:04d}", bbox_L1[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
+        mse_latent_ = [loss / total_count for loss in latent_loss]
+        wandb.log(dict([(f"val-latent-{step:04d}", mse_latent_[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
+        bbox_loss_ = [loss / total_count for loss in bbox_loss]
+        wandb.log(dict([(f"val-bbox-{step:04d}", bbox_loss_[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
+        bbox_L1_ = [loss / total_count for loss in bbox_L1]
+        wandb.log(dict([(f"val-bbox-L1-{step:04d}", bbox_L1_[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
+
+        # cal matric panel-wise
+        max_face = self.val_dataset.max_face
+        bbox_L1_pw_ = [loss / (total_count * max_face) for loss in bbox_L1]
+        wandb.log(dict([(f"val-bbox_pw-L1-{step:04d}", bbox_L1_pw_[idx]) for idx, step in enumerate(val_timesteps)]), step=self.iters)
 
         self.model.train() # set to train
 
@@ -648,6 +679,9 @@ class GarmageNetTrainer():
             self.val_dataloader = torch.utils.data.DataLoader(
                 self.val_dataset, shuffle=False,
                 batch_size=self.batch_size, num_workers=16)
+
+        # Calculating metrics on result ===
+
 
         return
     

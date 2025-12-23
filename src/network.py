@@ -340,7 +340,7 @@ class SketchEncoder:
             self.sketch_emb_dim = 1536
             self.sketch_encoder = None
             self.sketch_embedder_fn = None
-        elif encoder == 'RADIO_V2.5-H':
+        elif encoder in ['RADIO_V2.5-H', 'RADIO_V2.5-H_saptial']:
             from src.utils import resize_image
             self.resize_fn = resize_image
             radio_model = torch.hub.load(
@@ -437,18 +437,18 @@ class SpatialDiTBlock(nn.Module):
         mask: (B, N) - Padding mask for x
         """
         
-        print('SpatialDiTBlock input:', x.shape, t.shape, context.shape, mask.shape if mask is not None else None)
+        # print('SpatialDiTBlock input:', x.shape, t.shape, context.shape, mask.shape if mask is not None else None)
 
         # 1. Regress Modulation Parameters from Timestep
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(t)[:, None].chunk(6, dim=-1)
         )
 
-        print('*** adaLN output: ', shift_msa.shape, scale_msa.shape, gate_msa.shape, shift_mlp.shape, scale_mlp.shape, gate_mlp.shape)
+        # print('*** adaLN output: ', shift_msa.shape, scale_msa.shape, gate_msa.shape, shift_mlp.shape, scale_mlp.shape, gate_mlp.shape)
 
         # 2. Self-Attention Block (Time-Modulated)
         x_norm = self.modulate(self.norm1(x), shift_msa, scale_msa)
-        print('*** x_norm: ', x_norm.shape, x_norm.min(), x_norm.max())
+        # print('*** x_norm: ', x_norm.shape, x_norm.min(), x_norm.max())
         
         # Handle mask for Self-Attention if needed (tgt_key_padding_mask)
         # Note: nn.MultiheadAttention expects key_padding_mask
@@ -557,32 +557,32 @@ class GarmageNet(nn.Module):
         bsz, seq_len, _ = pos.shape
 
         x = self.z_embed(z) # [B, N, D]
-        print('*** x: ', x.shape, x.min(), x.max())
+        # print('*** x: ', x.shape, x.min(), x.max())
         if self.p_dim > 0: x = x + self.p_embed(pos)    # Add position signal (3D bounding box and 2D scale)
-        print('*** x: ', x.shape, x.min(), x.max())
+        # print('*** x: ', x.shape, x.min(), x.max())
 
         t_embs = self.time_embed(sincos_embedding(timesteps, self.embed_dim))
-        print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
+        # print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
 
         # Add class embedding to time embeddings
         if self.n_classes > 0 and class_label is not None:
             if is_train: class_label[torch.rand(class_label.shape) <= 0.1] = 0 # 10% random drop
             assert class_label.ndim==2
             t_embs = t_embs + self.class_embed(class_label).squeeze(-2)
-            print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
+            # print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
 
         # Processing global features (e.g. text prompt)
         if self.condition_dim > 0 and cond_global is not None:
             cond_token = self.cond_embed(cond_global)
             # t_embs = t_embs + cond_token
             # cond_token = None
-            print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
+            # print('*** t_embs: ', t_embs.shape, t_embs.min(), t_embs.max())
 
         # Processing local-aware features (e.g. pointcloud/sketch)
         if self.condition_dim > 0 and cond_local is not None:
             cond_token = self.cond_embed(cond_local)
             cond_token = cond_token[:, None] if len(cond_token.shape) == 2 else cond_token  # [B, n_surfs, emb_dim]
-            print('*** cond_token: ', cond_token.shape, cond_token.min(), cond_token.max())
+            # print('*** cond_token: ', cond_token.shape, cond_token.min(), cond_token.max())
         
         for block in self.net: x = block(x, t_embs, context=cond_token, mask=mask)
             

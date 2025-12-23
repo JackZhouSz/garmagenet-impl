@@ -44,8 +44,9 @@ def get_args_ldm():
     parser.add_argument("--pointcloud_encoder", type=str, default=None, choices=[None, 'POINT_E'], help="Pointcloud encoder type when applying pointcloud as generation condition.")
     parser.add_argument("--pointcloud_sampled_dir", type=str, default=None,  help="Prepared pointcloud.")
     parser.add_argument("--pointcloud_feature_dir", type=str, default=None,  help="Prepared pointcloud feature.")
-    parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H"], help="Sketch encoder type when applying sketch as generation condition.")
+    parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H", "RADIO_V2.5-H_saptial"], help="Sketch encoder type when applying sketch as generation condition.")
     parser.add_argument("--sketch_feature_dir", type=str, default=None,  help="Prepared sketch feature.")
+    parser.add_argument("--condition_type", type=str, default='summary', choices=['summary', 'spatial'], help="Text encoder type when applying text as generation condition.")
 
     # Model parameters
     parser.add_argument('--surfvae', type=str, default=None, required=True, help='Path to pretrained VAE weights')
