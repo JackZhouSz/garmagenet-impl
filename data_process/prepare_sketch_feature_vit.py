@@ -9,6 +9,9 @@ from src.network import SketchEncoder
 
 
 if __name__ == '__main__':
+    raise NotImplementedError
+    # 使用 _image_process/radio_v2.5-h_spatial.py
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--root_dir', type=str, default=None)
     parser.add_argument('--output_dir', type=str, default=None)

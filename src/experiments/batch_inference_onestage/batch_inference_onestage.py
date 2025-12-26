@@ -1,7 +1,9 @@
 import os
 import pickle
+import shutil
 import argparse
 from tqdm import tqdm
+from glob import glob
 
 import torch
 import numpy as np
@@ -139,7 +141,7 @@ def init_models(args):
         condition_dim = -1
 
     # Initialize network
-    model_p_dim = -1
+    model_p_dim = 8
     model_z_dim = 0
     for k in args.latent_data_fields:
         model_z_dim += data_fields_dict[k]["len"]
@@ -204,9 +206,9 @@ def inference_one(
     if args.text_encoder is not None:
         condition_emb = text_enc(caption)
     elif args.pointcloud_encoder is not None:
-        condition_emb = pointcloud_feature.reshape(1,-1)
+        condition_emb = pointcloud_feature[None,...]
     elif args.sketch_encoder is not None:
-        condition_emb = sketch_features.reshape(1,-1)
+        condition_emb = sketch_features[None,...]
     else:
         condition_emb = None
     if condition_emb is not None:
@@ -216,40 +218,40 @@ def inference_one(
 
     # GeometryLatent+BBox Denoising ---------------------------------------------------------------
     latent_len = model.z_dim
-    latent = randn_tensor((1, max_surf, latent_len), device=device)
-    annention_mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
+    latent = randn_tensor((1, max_surf, 64), device=device)
+    pos = randn_tensor((1, max_surf, 8), device=device)
+    mask = torch.zeros((1, max_surf), dtype=torch.bool, device=device)
     ddpm_scheduler.set_timesteps(1000//10)
     with torch.no_grad():
         for t in tqdm(ddpm_scheduler.timesteps, desc="Denoising"):
             timesteps = t.reshape(-1).to(device)
             pred = model(
-                surfZ=latent,
+                pos=pos,
+                z=latent,
                 timesteps=timesteps,
-                surfPos=None,
-                surf_mask=annention_mask.to(device),
+                mask=mask,
                 class_label=None,
-                condition=condition_emb,
-                is_train=False)
-            latent = ddpm_scheduler.step(pred, t, latent).prev_sample
+                cond_global=condition_emb,
+                cond_local = None,
+                is_train=False
+            )
+            latent = ddpm_scheduler.step(pred[...,:64], t, latent).prev_sample
+            pos = ddpm_scheduler.step(pred[...,64:], t, pos).prev_sample
 
     # Filter out invalid token by the variance
     latent_valid_mask = latent.var(-1)>1e-3
+    # latent_valid_mask = (pos[..., 3:6].mean(-1) > 1e-3)
     n_surfs = latent_valid_mask.sum(-1)
     latent = latent[latent_valid_mask]
+    pos = pos[latent_valid_mask]
 
-    current_channel = 0
-    for k in args.latent_data_fields:
-        c_st = current_channel
-        c_ed = current_channel + data_fields_dict[k]["len"]
-        current_channel = c_ed
-        if k == "latent64":
-            geo_latent = latent[:,c_st:c_ed]
-        elif k == "bbox3d":
-            surf_bbox = latent[:,c_st:c_ed].detach().cpu().numpy()
-        elif k == "scale2d":
-            surf_uv_bbox_scale = latent[:,c_st:c_ed].detach().cpu().numpy()
-        else:
-            raise NotImplementedError
+    geo_latent = latent
+    surf_bbox_ccwh = pos[...,:6].detach().cpu().numpy()
+    # ccwh2xyxy
+    surf_bbox = np.concatenate(
+        [surf_bbox_ccwh[...,:3]-surf_bbox_ccwh[...,3:]/2,
+         surf_bbox_ccwh[...,:3]+surf_bbox_ccwh[...,3:]/2],axis=-1)
+    surf_uv_bbox_scale = pos[...,6:].detach().cpu().numpy()
 
     # VAE Decoding ------------------------------------------------------------------------
     with torch.no_grad(): decoded_garmage = surf_vae(geo_latent.view(-1, latent_channels, latent_size, latent_size))
@@ -363,10 +365,13 @@ def inference_one(
     print('[DONE] save to:', output_fp)
 
 
-def run(args):
+def check_cond(args):
+    # Ensure only 1 kind of condition embedding applied.
     not_none_count = sum(x is not None for x in [args.text_encoder, args.pointcloud_encoder, args.sketch_encoder])
     assert not_none_count in (0, 1)
 
+
+def run_cache(args):
     models = init_models(args)
 
     os.makedirs(args.output, exist_ok=True)
@@ -425,8 +430,47 @@ def run(args):
     print('[DONE]')
 
 
+def run_image(args):
+    models = init_models(args)
+
+    sketch_enc = models["sketch_enc"]
+
+    os.makedirs(args.output, exist_ok=True)
+
+    # reference_sketch_dir = "/data/lsr/resources/Anta/251111_训练集_对比原图和增强/images/ANTA_silhouettes_trainset_sample50_AUGed"
+    # reference_sketch_dir = "/home/ubuntu/桌面/米白色渲染图/推理测试"
+    # reference_sketch_dir = "/data/lsr/resources/Anta/251225_crossattention/images_combined_val/images"
+    reference_sketch_dir = "/home/Ex1/data/resources/Anta/251225_crossattention/image_gemini_改款/随机组合/image"
+
+    reference_sketch_fp_list = sorted(glob(os.path.join(reference_sketch_dir, "*.png")))
+    for idx, sketch_fp in tqdm(enumerate(reference_sketch_fp_list)):
+        try:
+            sketch_features = sketch_enc.sketch_embedder_fn(sketch_fp)
+            sketch_features = torch.tensor(sketch_features["spatial"], device=args.device).squeeze(0)
+            shutil.copy(sketch_fp, args.output)
+            output_fp = os.path.join(args.output, os.path.basename(sketch_fp).replace(".png", ".pkl"))
+
+            inference_one(
+                models,
+                args=args,
+                caption="",
+                pointcloud_feature=None,
+                sampled_pc_cond=None,
+                sketch_features=sketch_features,
+                dedup=True,
+                output_fp=output_fp,
+                vis=True,
+                data_fp=sketch_fp,
+                data_id_trainval="",
+            )
+        except Exception as e:
+            print(e)
+            continue
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+
+    parser.add_argument('--task', type=str, choices=["cache", "image", "caption", "pointcloud"], default="cache")
 
     # path configuration
     parser.add_argument(
@@ -461,9 +505,16 @@ if __name__ == "__main__":
     parser.add_argument('--pos_dim', default=-1, type=int, help='Set this to -1 when training with wcs')
     parser.add_argument('--text_encoder', type=str, default=None, choices=[None, 'CLIP'], help='Text encoder type.')
     parser.add_argument('--pointcloud_encoder', type=str, default=None, choices=[None, 'POINT_E'], help='Pointcloud encoder type.')
-    parser.add_argument('--sketch_encoder', type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H"], help='Sketch encoder type.')
+    parser.add_argument('--sketch_encoder', type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H", "RADIO_V2.5-H_spatial"], help='Sketch encoder type.')
 
     parser.add_argument('--device', type=str, default="cuda", help='')
 
     args = parser.parse_args()
-    run(args)
+
+    check_cond(args)
+
+    task_choice = {
+        "cache": run_cache,
+        "image": run_image,
+    }
+    task_choice[args.task](args)

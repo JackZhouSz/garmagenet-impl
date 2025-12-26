@@ -250,26 +250,7 @@ class VAETrainer():
         return
 
 
-def get_condition_dim(args, self):
-    if args.text_encoder is not None:
-        condition_dim = self.text_encoder.text_emb_dim
-    elif args.pointcloud_encoder is not None:
-        condition_dim = self.pointcloud_encoder.pointcloud_emb_dim
-    elif args.sketch_encoder is not None:
-        if args.sketch_encoder == "LAION2B":
-            condition_dim = 1280
-        elif args.sketch_encoder == "RADIO_V2.5-G":
-            condition_dim = 1536
-        elif args.sketch_encoder == "RADIO_V2.5-H":
-            condition_dim = 3840
-        elif args.sketch_encoder == "RADIO_V2.5-H_saptial":
-            condition_dim = 1280
-        else:
-            raise NotImplementedError("args.sketch_encoder name wrong.")
-    else:
-        condition_dim = -1
-
-    return condition_dim
+from src.constant import get_condition_dim
 
 
 class GarmageNetTrainer():
@@ -401,9 +382,9 @@ class GarmageNetTrainer():
             eps=1e-08,
         )
         self.scaler = torch.cuda.amp.GradScaler(
-            init_scale=2.0 ** 14,
+            init_scale=2.0 ** 16,
             growth_factor=1.5,
-            growth_interval=20000 * steps_per_epoch(len(self.train_dataset), args.batch_size)
+            growth_interval=5000 * steps_per_epoch(len(self.train_dataset), args.batch_size)
         )
         if args.finetune:
             if "optimizer" in state_dict:

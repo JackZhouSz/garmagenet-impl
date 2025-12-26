@@ -1,3 +1,4 @@
+import os
 import math
 import torch
 import torch.nn as nn
@@ -11,6 +12,8 @@ from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.utils import BaseOutput
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.autoencoders.vae import Decoder, DecoderOutput, DiagonalGaussianDistribution, Encoder
+
+from src.constant import get_condition_dim
 
 
 def sincos_embedding(input, dim, max_period=10000):
@@ -340,7 +343,7 @@ class SketchEncoder:
             self.sketch_emb_dim = 1536
             self.sketch_encoder = None
             self.sketch_embedder_fn = None
-        elif encoder in ['RADIO_V2.5-H', 'RADIO_V2.5-H_saptial']:
+        elif encoder in ['RADIO_V2.5-H', 'RADIO_V2.5-H_spatial']:
             from src.utils import resize_image
             self.resize_fn = resize_image
             radio_model = torch.hub.load(
@@ -352,7 +355,7 @@ class SketchEncoder:
             )
             radio_model.cuda().eval()
             self.model = radio_model
-            self.sketch_emb_dim = 3840
+            self.sketch_emb_dim = 3840 if encoder=='RADIO_V2.5-H' else 1280
             self.sketch_encoder = radio_model
             self.sketch_embedder_fn = self._get_radiov2_5h_sketch_embeds
         else:
@@ -367,28 +370,47 @@ class SketchEncoder:
         sketch_features = sketch_features[1:]
         return sketch_features
 
-    def _get_radiov2_5h_sketch_embeds(self, sketch_fp, resize=True):
-        with torch.no_grad():
-            # load image
-            image = Image.open(sketch_fp)
+    def _get_radiov2_5h_sketch_embeds(self, sketch_fp, RESO=224):
+        # image process ===
+        image = Image.open(sketch_fp)
+        image.load()
 
-            if resize:
-                image = self.resize_fn(image, new_size=518)
+        width, height = image.size
+        scale = min(RESO / width, RESO / height)
+        new_width = int(width * scale)
+        new_height = int(height * scale)
 
-            image = image.convert('RGB')
+        resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-            x = pil_to_tensor(image).to(dtype=torch.float32, device='cuda')
-            x.div_(255.0)
-            x = x.unsqueeze(0)
+        bg_color = image.getpixel((0, 0))
 
-            # adjust resolution
-            nearest_res = self.model.get_nearest_supported_resolution(*x.shape[-2:])
-            x = F.interpolate(x, nearest_res, mode='bilinear', align_corners=False)
+        if new_width == RESO and new_height == RESO:
+            pass
+        else:
+            background = Image.new('RGB', (RESO, RESO), bg_color)
+            offset = ((RESO - new_width) // 2, (RESO - new_height) // 2)
+            background.paste(resized_image, offset)
+            resized_image = background
 
-            # inference
-            with torch.autocast('cuda', dtype=torch.bfloat16):
-                summary, spatial_feat = self.model(x)       # spatial feature in shape [N, L, C], here N equals to 1
-            return spatial_feat
+        # feature extract ===
+        x = pil_to_tensor(resized_image).to(dtype=torch.float32, device='cuda') / 255.0
+        x = x.unsqueeze(0)
+
+        nearest_res = self.model.get_nearest_supported_resolution(*x.shape[-2:])
+        x = F.interpolate(x, nearest_res, mode='bilinear', align_corners=False)
+
+        with torch.no_grad(), torch.autocast('cuda', dtype=torch.bfloat16):
+
+            summary, spatial_feat = self.model(x)
+            summary_np = summary[0].detach().cpu().numpy()
+            spatial_feat = spatial_feat.detach().cpu().numpy()
+            output_dict = {
+                "summary": summary,
+                "spatial": spatial_feat,
+            }
+
+        return output_dict
+
 
     def __call__(self, sketch_fp):
         return self.sketch_embedder_fn(sketch_fp)

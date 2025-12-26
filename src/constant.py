@@ -42,3 +42,26 @@ data_fields_dict = {
         "len": 2,
     }
 }
+
+
+def get_condition_dim(args, self):
+    if args.text_encoder is not None:
+        condition_dim = self.text_encoder.text_emb_dim
+    elif args.pointcloud_encoder is not None:
+        condition_dim = self.pointcloud_encoder.pointcloud_emb_dim
+    elif args.sketch_encoder is not None:
+        if args.sketch_encoder == "LAION2B":
+            condition_dim = 1280
+        elif args.sketch_encoder == "RADIO_V2.5-G":
+            condition_dim = 1536
+        elif args.sketch_encoder == "RADIO_V2.5-H":
+            condition_dim = 3840
+        elif args.sketch_encoder == "RADIO_V2.5-H_saptial":
+            condition_dim = 1280
+        else:
+            raise NotImplementedError("args.sketch_encoder name wrong.")
+    else:
+        condition_dim = -1
+
+    return condition_dim
+

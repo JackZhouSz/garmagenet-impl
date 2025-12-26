@@ -561,6 +561,8 @@ class GeometryGenData(torch.utils.data.Dataset):
                     sketch_feature_fp = sketch_feature_fp[0]
                 with open(sketch_feature_fp, "rb") as f:
                     sketch_feature = pickle.load(f)[self.condition_type]
+                    if isinstance(sketch_feature, torch.Tensor):
+                        sketch_feature = sketch_feature.detach().cpu().numpy()
             else:
                 sketch_feature = data['sketch_feature']
 
