@@ -241,7 +241,7 @@ def inference_one(
     # Filter out invalid token by the variance
     panel_valid_mask = latent.var(-1)>1e-3
 
-    # check filter ambiguity
+    # check filter ambiguity (different between bbox filter and latent filter)
     if True:
         filt_diff = torch.sum((latent.var(-1)>1e-3) != (pos.var(-1)>1e-3))
         if filt_diff>0:

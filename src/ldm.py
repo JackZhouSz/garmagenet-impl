@@ -48,8 +48,7 @@ def get_args_ldm():
     parser.add_argument("--sketch_encoder", type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H", "RADIO_V2.5-H_spatial"], help="Sketch encoder type when applying sketch as generation condition.")
     parser.add_argument("--sketch_feature_dir", type=str, default=None,  help="Prepared sketch feature.")
     parser.add_argument("--condition_type", type=str, default='summary', choices=['summary', 'spatial'], help="Text encoder type when applying text as generation condition.")
-    parser.add_argument("--feature_kwd",
-                        type=str, default=None, help="Name for feature choice.")  # 提前准备好的 sketch feature
+    parser.add_argument("--feature_kwd",  type=str, default="0", help="Key for feature choice.")
 
     # Model parameters
     parser.add_argument('--surfvae', type=str, default=None, required=True, help='Path to pretrained VAE weights')

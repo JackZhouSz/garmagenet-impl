@@ -346,6 +346,7 @@ class SketchEncoder:
         elif encoder in ['RADIO_V2.5-H', 'RADIO_V2.5-H_spatial']:
             from src.utils import resize_image
             self.resize_fn = resize_image
+            # download online
             radio_model = torch.hub.load(
                 'NVlabs/RADIO',
                 'radio_model',
@@ -368,7 +369,11 @@ class SketchEncoder:
         image = image.to(self.device).unsqueeze(0)
         sketch_features = self.sketch_encoder.forward_features(image).squeeze()
         sketch_features = sketch_features[1:]
-        return sketch_features
+
+        output_dict = {
+            "spatial": sketch_features.detach().cpu().numpy(),
+        }
+        return output_dict
 
     def _get_radiov2_5h_sketch_embeds(self, sketch_fp, RESO=224):
         # image process ===
@@ -405,7 +410,7 @@ class SketchEncoder:
             summary_np = summary[0].detach().cpu().numpy()
             spatial_feat = spatial_feat.detach().cpu().numpy()
             output_dict = {
-                "summary": summary,
+                "summary": summary_np,
                 "spatial": spatial_feat,
             }
 
