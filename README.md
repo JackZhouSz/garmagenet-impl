@@ -251,3 +251,4 @@ We extend our sincere gratitude to the following open-source projects and resear
 - [**BrepGen**](https://github.com/samxuxiang/BrepGen)
 - [**Jigsaw**](https://github.com/Jiaxin-Lu/Jigsaw)
 
+We are also deeply indebted to the broader research community for their pioneering exploration and invaluable insights into the field of garment modeling.
