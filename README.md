@@ -1,5 +1,5 @@
 <h2 align="center">
-<img src="./assets/images/logo.png" width="35%" align="center"> 
+<img src="./assets/images/garmagenet_logo.png" width="35%" align="center"> 
 <br/>
 <x-small>A Multimodal Generative Framework for Sewing Pattern Design and Generic Garment Modeling</x-small>
 </h2>
