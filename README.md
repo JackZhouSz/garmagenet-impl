@@ -34,7 +34,7 @@
 
 - **[January 06, 2026]** Code release for GarmageJigsaw.
 
-The following sections provide instructions on how to set up and train ***GarmageNet***. For details regarding the training and testing of ***GarmageJigsaw***, and its integration into [Style3D Studio](https://www.style3d.com/products/studio), please refer to [garmage_jigsaw](./garmage_jigsaw/).
+The following sections provide instructions on how to set up and train ***GarmageNet***. For details regarding the training and testing of ***GarmageJigsaw***, and its integration into [Style3D Studio](https://www.style3d.com/products/studio), please refer to the [GarmageJigsaw Repo](https://github.com/Style3D/garmagejigsaw-impl).
 
 ## 🔨 Installation
 
