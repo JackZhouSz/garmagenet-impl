@@ -150,11 +150,7 @@ class GarmageNetData(torch.utils.data.Dataset):
         random.shuffle(self.data_list)
         print('Total items: ', len(self.data_list), self.data_list[0])
 
-        # Config data chunks
-        if args.chunksize > 0:
-            raise NotImplementedError
-        else:
-            self.load_one_to_init()
+        self.load_one_to_init()
 
     def load_one_to_init(self):
         """
