@@ -162,7 +162,7 @@ def init_models(args):
     else:
         raise NotImplementedError
 
-    model.load_state_dict(torch.load(args.onestage_gen)['model_state_dict'])
+    model.load_state_dict(torch.load(args.garmagenet)['model_state_dict'])
     model.to(device).eval()
     print('[DONE] Models initialized.')
 
@@ -358,6 +358,10 @@ def inference_one(
         'args': vars(args)
     }
 
+    for k in result:
+        if isinstance(result[k], np.ndarray):
+            result[k] = result[k].tolist()
+
     # visualize pointcloud condition
     if args.pointcloud_encoder is not None:
         sampled_pts_normalized = normalize_pointcloud(sampled_pc_cond, 1)
@@ -448,7 +452,7 @@ def run_image(args):
     for idx, sketch_fp in tqdm(enumerate(reference_sketch_fp_list)):
         try:
             sketch_features = sketch_enc.sketch_embedder_fn(sketch_fp)
-            sketch_features = torch.tensor(sketch_features["spatial"], device=args.device).squeeze(0)
+            sketch_features = torch.tensor(sketch_features[args.condition_type], device=args.device).squeeze(0)
             shutil.copy(sketch_fp, args.output)
             output_fp = os.path.join(args.output, os.path.basename(sketch_fp).replace(".png", ".pkl"))
 
@@ -480,9 +484,9 @@ if __name__ == "__main__":
         default=None,
         help='Path to VAE model')
     parser.add_argument(
-        '--onestage_gen', type=str,
+        '--garmagenet', type=str,
         default=None,
-        help='Path to onestage_gen model')
+        help='Path to garmagenet model')
     parser.add_argument(
         "--denoiser_type",
         type=str, choices=['default'],
@@ -508,10 +512,11 @@ if __name__ == "__main__":
     parser.add_argument("--padding", type=str, default="zero", choices=["repeat", "zero"])
     parser.add_argument('--embed_dim', type=int, default=768, help='Embding dim of ldm model.')
     parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of ldm model.')  # TE:int HYdit:list
-    parser.add_argument('--pos_dim', default=-1, type=int, help='Set this to -1 when training with wcs')
     parser.add_argument('--text_encoder', type=str, default=None, choices=[None, 'CLIP'], help='Text encoder type.')
     parser.add_argument('--pointcloud_encoder', type=str, default=None, choices=[None, 'POINT_E'], help='Pointcloud encoder type.')
     parser.add_argument('--sketch_encoder', type=str, default=None, choices=[None, 'LAION2B', "RADIO_V2.5-G", "RADIO_V2.5-H", "RADIO_V2.5-H_spatial"], help='Sketch encoder type.')
+    parser.add_argument("--condition_type", type=str, default='summary', choices=['summary', 'spatial'],
+                        help="Text encoder type when applying text as generation condition.")
 
     parser.add_argument('--device', type=str, default="cuda", help='')
 

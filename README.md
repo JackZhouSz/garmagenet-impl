@@ -93,14 +93,14 @@ python src/vae.py --data <garmageset-root>/garmages --use_data_root \
 ```bash
 python src/ldm.py \
     --data <garmageset-root>/garmages --use_data_root \
-    --list <datalist-path> --option onestage_gen --lr 5e-4 \
+    --list <datalist-path> --option garmagenet --lr 5e-4 \
     --surfvae <vae-checkpoint-path> \
-    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_uncond/encoder_mode \
-    --expr Onestage_xyz_mask_pad_zero_uncond \
+    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_uncond/encoder_mode \
+    --expr GarmageNet_xyz_mask_pad_zero_uncond \
     --train_nepoch 200000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
     --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 \
-    --embed_dim 768 --pos_dim -1 \
+    --embed_dim 768 \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs \
     --gpu 0
 ```
@@ -109,14 +109,14 @@ python src/ldm.py \
 
 ```bash
 python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
-    --list <datalist-path> --option onestage_gen \
+    --list <datalist-path> --option garmagenet \
     --surfvae <vae-checkpoint-path> \
-    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_caption_cond/encoder_mode \
-    --expr Onestage_xyz_mask_pad_zero_caption_cond \
+    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_caption_cond/encoder_mode \
+    --expr GarmageNet_xyz_mask_pad_zero_caption_cond \
     --train_nepoch 200000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
     --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 \
-    --embed_dim 768 --num_layer 12 --pos_dim -1 --dropout 0.1 \
+    --embed_dim 768 --num_layer 12 --dropout 0.1 \
     --text_encoder CLIP \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs caption \
     --gpu 0
@@ -134,14 +134,14 @@ python data_process/prepare_pc_cond_sample.py \
 ```bash
 # Run training
 python src/ldm.py --data <garmageset-root>/garmages --use_data_root \
-    --list <datalist-path> --option onestage_gen \
+    --list <datalist-path> --option garmagenet \
     --surfvae <vae-checkpoint-path> \
-    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_pccond/encoder_mode \
-    --expr Onestage_xyz_mask_pad_zero_pccond \
+    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_pccond/encoder_mode \
+    --expr GarmageNet_xyz_mask_pad_zero_pccond \
     --train_nepoch 200000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
     --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
     --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 \
-    --embed_dim 768 --num_layer 12 --pos_dim -1 --dropout 0.1 \
+    --embed_dim 768 --num_layer 12 --dropout 0.1 \
     --pointcloud_encoder POINT_E --pointcloud_sampled_dir /data/AIGP/GarmageSet_Opensource/pc_cond_sample_uniform \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs pointcloud_feature \
     --gpu 0
@@ -160,13 +160,13 @@ python data_process/prepare_sketch_feature_vit.py  \
 # Run training
 python src/ldm.py \
      --data <garmageset-root>/garmages --use_data_root \
-    --list <datalist-path> --option onestage_gen \
+    --list <datalist-path> --option garmagenet \
     --surfvae <vae-checkpoint-path> \
-    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_sketchCond_laion2b/encoder_mode \
-    --expr Onestage_xyz_mask_pad_zero_sketchCond_laion2b \
+    --cache_dir log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_sketchCond_laion2b/encoder_mode \
+    --expr GarmageNet_xyz_mask_pad_zero_sketchCond_laion2b \
     --train_nepoch 200000 --test_nepoch 200 --save_nepoch 10000 --batch_size 1230 --chunksize -1 \
     --padding zero --bbox_scaled 1.0 --z_scaled 1.0 \
-    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 --pos_dim -1 \
+    --block_dims 16 32 32 64 64 128 --latent_channels 1 --max_face 32 \
     --sketch_encoder LAION2B --sketch_feature_dir <garmageset-root>/feature_laion2b \
     --condition_type spatial --feature_kwd 0 \
     --data_fields surf_ncs surf_mask surf_bbox_wcs surf_uv_bbox_wcs sketch_feature \
@@ -178,15 +178,14 @@ python src/ldm.py \
 **Unconditional** generation:
 
 ```bash
-python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
+python src/experiments/batch_inference/batch_inference.py \
 	--vae <vae-checkpoint-path> \
-	--onestage_gen <one-stage-model-ckpt-path> \
-	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_uncond/encoder_mode/one_stage_gen_validate.pkl \
+	--garmagenet <GarmageNet-model-ckpt-path> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_uncond/encoder_mode/garmagenet_validate.pkl \
 	--output generated/uncond \
 	--padding zero \
 	--block_dims 16 32 32 64 64 128 \
 	--img_channels 4 \
-	--pos_dim -1 \
 	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64 bbox3d scale2d
 ```
@@ -194,16 +193,15 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 Generate garmage with **text prompts**:
 
 ```bash
-python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
+python src/experiments/batch_inference/batch_inference.py \
 	--vae <vae-checkpoint-path> \
-	--onestage_gen <one-stage-model-ckpt-path> \
-	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_caption_cond/encoder_mode/one_stage_gen_validate.pkl \
+	--garmagenet <GarmageNet-model-ckpt-path> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_caption_cond/encoder_mode/garmagenet_validate.pkl \
 	--text_encoder CLIP \
 	--output generated/caption_cond \
 	--padding zero \
 	--block_dims 16 32 32 64 64 128 \
 	--img_channels 4 \
-	--pos_dim -1 \
 	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64
 ```
@@ -211,16 +209,15 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 Generate garmage with **unstructured pointclouds**:
 
 ```bash
-python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
+python src/experiments/batch_inference/batch_inference.py \
 	--vae <vae-checkpoint-path> \
-	--onestage_gen <one-stage-model-ckpt-path> \
-	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_pccond/encoder_mode/one_stage_gen_validate.pkl \
+	--garmagenet <GarmageNet-model-ckpt-path> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_pccond/encoder_mode/garmagenet_validate.pkl \
 	--pointcloud_encoder POINT_E \
 	--output generated/pc_cond_uniform \
 	--padding zero \
 	--block_dims 16 32 32 64 64 128 \
 	--img_channels 4 \
-	--pos_dim -1 \
 	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64
 ```
@@ -228,16 +225,15 @@ python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
 Generate garmage with **line-art sketches** (prefer front-view):
 
 ```bash
-python src/experiments/batch_inference_onestage/batch_inference_onestage.py \
+python src/experiments/batch_inference/batch_inference.py \
 	--vae <vae-checkpoint-path> \
-	--onestage_gen <one-stage-model-ckpt-path> \
-	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/Onestage_xyz_mask_sketchCond_laion2b/encoder_mode/one_stage_gen_validate.pkl \
+	--garmagenet <GarmageNet-model-ckpt-path> \
+	--cache log/garmagenet_vae_surf_256_xyz_mask_unet6_latent_1/cache/GarmageNet_xyz_mask_sketchCond_laion2b/encoder_mode/garmagenet_validate.pkl \
 	--sketch_encoder LAION2B \
 	--output generated/sketch_cond \
 	--padding zero \
 	--block_dims 16 32 32 64 64 128 \
 	--img_channels 4 \
-	--pos_dim -1 \
 	--garmage_data_fields surf_ncs surf_mask \
 	--latent_data_fields latent64
 ```

@@ -154,6 +154,7 @@ class VAETrainer():
                 if self.vae_type == "kl":
                     _z = posterior.mode()
                     wandb.log({
+                        "epoch": self.epoch,
                         "loss-mse": mse_loss,
                         "loss-kl": kl_loss,
                         "z-min": z.min(),
@@ -274,14 +275,6 @@ class GarmageNetTrainer():
         self.val_dataset = val_dataset
         self.batch_size = args.batch_size
 
-        if args.pos_dim is None:
-            self.pos_dim = self.train_dataset.pos_dim
-        else:
-            # training with wcs (one stage training)
-            args.pos_dim = int(args.pos_dim)
-            if args.pos_dim>0:
-                raise ValueError("one stage training with wcs should set pos_dim<=0")
-            self.pos_dim = args.pos_dim
         self.num_channels = self.train_dataset.num_channels
         self.sample_size = self.train_dataset.resolution
         self.latent_channels = args.latent_channels

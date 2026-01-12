@@ -10,7 +10,7 @@ def get_args_ldm():
     # Training parameters
     parser.add_argument('--expr', type=str, default="expr_default", help='environment')
     parser.add_argument('--log_dir', type=str, default="log", help='name of the log folder.')
-    parser.add_argument("--option", type=str, choices=['onestage_gen'], default='onestage_gen')
+    parser.add_argument("--option", type=str, choices=['garmagenet'], default='garmagenet')
     parser.add_argument("--denoiser_type", type=str, choices=['default'], default='default', help="Choose ldm type.")
     parser.add_argument("--scheduler", type=str, default="DDPM", choices=["DDPM"], help="")
     parser.add_argument('--lr', type=float, default=5e-4, help='Learning rate.')
@@ -56,7 +56,6 @@ def get_args_ldm():
     parser.add_argument('--latent_channels', type=int, default=1, help='Latent channel of the VAE model.')
     parser.add_argument('--embed_dim', type=int, default=768, help='Embding dimension of LDM model.')
     parser.add_argument('--num_layer', type=int, nargs='+', default=12, help='Layer num of LDM model.')
-    parser.add_argument('--pos_dim', default=None, help='Set this to -1 when training with wcs')
     parser.add_argument('--dropout', type=float, default=0.1)
 
     args = parser.parse_args()
@@ -70,10 +69,10 @@ def get_args_ldm():
 
 def run(args):
     # Initialize dataset and trainer ===
-    if args.option == 'onestage_gen':
-        train_dataset = OneStage_Gen_Data(
+    if args.option == 'garmagenet':
+        train_dataset = GarmageNetData(
             args.data, args.list, validate=False, aug=args.data_aug, args=args)
-        val_dataset = OneStage_Gen_Data(
+        val_dataset = GarmageNetData(
             args.data, args.list, validate=True, aug=False, args=args)
         ldm = GarmageNetTrainer(args, train_dataset, val_dataset)
     else:
